@@ -24,11 +24,7 @@ class CandidateResult(Base):
 
     election = relationship("Election", back_populates="candidate_results")
     candidate = relationship("Candidate", back_populates="candidate_result")
-    candidate_result = relationship(
-        "CandidateResult",
-        back_populates="candidate",
-        uselist=False,
-    )
+    
 
     __table_args__ = (
         UniqueConstraint("election_id", "candidate_id", name="uq_candidate_results_election_candidate"),

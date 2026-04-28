@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 
 from app.database import get_db
+from app.routes.auth_routes import router as auth_router
 
 app = FastAPI(title="Homomorphic E-Voting API")
-
+app.include_router(auth_router)
 
 @app.get("/")
 def root():
