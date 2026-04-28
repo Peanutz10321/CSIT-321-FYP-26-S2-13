@@ -7,9 +7,12 @@ from fastapi import Depends
 
 from app.database import get_db
 from app.routes.auth_routes import router as auth_router
+from app.routes.user_routes import router as user_router
 
 app = FastAPI(title="Homomorphic E-Voting API")
+
 app.include_router(auth_router)
+app.include_router(user_router)
 
 @app.get("/")
 def root():
