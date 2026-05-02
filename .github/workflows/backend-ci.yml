@@ -30,6 +30,6 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: sqlite:///./test.db
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: test
         run: pytest tests -v
