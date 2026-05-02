@@ -67,6 +67,10 @@ def student_token():
     student = register_user("student")
     return login_user(student["email"])
 
+@pytest.fixture
+def student_user():
+    return register_user("student")
+
 
 def valid_election_payload():
     now = datetime.utcnow()
@@ -325,3 +329,68 @@ class TestExtendDeadline:
 
         assert response.status_code == 400
         assert "later" in response.json()["detail"].lower()
+
+class TestElectionStatusTransitions:
+    def test_teacher_can_activate_own_draft_election(self, teacher_token, student_user):
+        election = create_election_as_teacher(teacher_token)
+
+        add_response = client.post(
+            f"{ELECTION_BASE}/{election['id']}/voters",
+            json={"institution_id": student_user["institution_id"]},
+            headers=auth_header(teacher_token),
+        )
+        assert add_response.status_code == 201, add_response.text
+
+        response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/activate",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "active"
+
+    def test_cannot_activate_without_eligible_voter(self, teacher_token):
+        election = create_election_as_teacher(teacher_token)
+
+        response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/activate",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+        assert "eligible voter" in response.json()["detail"].lower()
+
+    def test_teacher_can_complete_active_election(self, teacher_token, student_user):
+        election = create_election_as_teacher(teacher_token)
+
+        add_response = client.post(
+            f"{ELECTION_BASE}/{election['id']}/voters",
+            json={"institution_id": student_user["institution_id"]},
+            headers=auth_header(teacher_token),
+        )
+        assert add_response.status_code == 201, add_response.text
+
+        activate_response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/activate",
+            headers=auth_header(teacher_token),
+        )
+        assert activate_response.status_code == 200, activate_response.text
+
+        complete_response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/complete",
+            headers=auth_header(teacher_token),
+        )
+
+        assert complete_response.status_code == 200, complete_response.text
+        assert complete_response.json()["status"] == "completed"
+
+    def test_cannot_complete_draft_election(self, teacher_token):
+        election = create_election_as_teacher(teacher_token)
+
+        response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/complete",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+        assert "active" in response.json()["detail"].lower()

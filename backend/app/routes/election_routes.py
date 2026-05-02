@@ -391,3 +391,105 @@ def view_eligible_voters(
         )
         for voter, student in voter_records
     ]
+
+@router.patch("/{election_id}/complete", response_model=ElectionResponse)
+def complete_election(
+    election_id: UUID,
+    db: Session = Depends(get_db),
+    current_teacher: User = Depends(require_teacher),
+):
+    election = (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.id == election_id)
+        .first()
+    )
+
+    if not election:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Election not found",
+        )
+
+    if election.teacher_id != current_teacher.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only complete elections that you created",
+        )
+
+    if election.status != ElectionStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only active elections can be completed",
+        )
+
+    election.status = ElectionStatus.completed
+
+    db.commit()
+    db.refresh(election)
+
+    return election
+
+@router.patch("/{election_id}/activate", response_model=ElectionResponse)
+def activate_election(
+    election_id: UUID,
+    db: Session = Depends(get_db),
+    current_teacher: User = Depends(require_teacher),
+):
+    election = (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.id == election_id)
+        .first()
+    )
+
+    if not election:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Election not found",
+        )
+
+    if election.teacher_id != current_teacher.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only activate elections that you created",
+        )
+
+    if election.status != ElectionStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only draft elections can be activated",
+        )
+
+    if not election.candidates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Election must have at least one candidate before activation",
+        )
+
+    eligible_voter_count = (
+        db.query(ElectionVoter)
+        .filter(
+            ElectionVoter.election_id == election.id,
+            ElectionVoter.eligibility_status == EligibilityStatus.eligible,
+        )
+        .count()
+    )
+
+    if eligible_voter_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Election must have at least one eligible voter before activation",
+        )
+
+    election.status = ElectionStatus.active
+    db.commit()
+
+    updated_election = (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.id == election.id)
+        .first()
+    )
+
+    return updated_election

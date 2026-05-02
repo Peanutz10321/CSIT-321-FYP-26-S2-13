@@ -38,7 +38,6 @@ def register_user(role: str, status: str = "active") -> dict:
     response = client.post(f"{AUTH_BASE}/register", json=payload)
     assert response.status_code in [200, 201], response.text
 
-    # If you need suspended/pending users for a test, update directly in DB.
     if status != "active":
         db = SessionLocal()
         try:
