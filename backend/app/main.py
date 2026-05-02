@@ -9,6 +9,7 @@ from app.routes.user_routes import router as user_router
 from app.routes.admin_user_routes import router as admin_user_router
 from app.routes.election_routes import router as election_router
 from app.routes.vote_routes import router as vote_router
+from app.routes.result_routes import router as result_router
 
 app = FastAPI(title="Homomorphic E-Voting API")
 
@@ -17,6 +18,7 @@ app.include_router(user_router)
 app.include_router(admin_user_router)
 app.include_router(election_router)
 app.include_router(vote_router)
+app.include_router(result_router)
 
 @app.get("/")
 def root():
