@@ -7,7 +7,7 @@ from app.schemas.auth_schema import RegisterRequest, LoginRequest, AuthResponse
 from app.schemas.user_schema import UserResponse
 from app.security.password import hash_password, verify_password
 from app.security.jwt import create_access_token
-
+from app.security.security import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -115,3 +115,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     )
 
     return AuthResponse(access_token=access_token)
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user)):
+    return{"message": "Logged out successfully"}
