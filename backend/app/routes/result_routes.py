@@ -68,7 +68,6 @@ def view_election_results(
             detail="Election has no candidates",
         )
 
-    candidate_lookup = {str(candidate.id): candidate for candidate in candidates}
     tally = {str(candidate.id): 0 for candidate in candidates}
 
     ballots = db.query(Ballot).filter(Ballot.election_id == election.id).all()

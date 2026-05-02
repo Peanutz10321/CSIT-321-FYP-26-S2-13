@@ -15,7 +15,7 @@ from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryRespons
 from app.security.security import require_student
 
 
-router = APIRouter(prefix="/votes", tags=["votes"])
+router = APIRouter(prefix="/votes", tags=["Votes"])
 
 
 @router.post("/", response_model=VoteResponse, status_code=status.HTTP_201_CREATED)

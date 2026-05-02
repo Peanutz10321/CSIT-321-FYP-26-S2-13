@@ -12,7 +12,6 @@ from app.schemas.election_schema import ElectionCreate, ElectionResponse, Electi
 from app.security.security import get_current_user, require_teacher
 
 from sqlalchemy.exc import IntegrityError
-from app.models.election import Election, ElectionStatus
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.schemas.election_voter_schema import (
     AddElectionVoterRequest,
