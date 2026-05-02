@@ -81,11 +81,22 @@ def view_active_election_list(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
     query = (
         db.query(Election)
         .options(joinedload(Election.candidates))
         .filter(Election.status == ElectionStatus.active)
     )
+    
+    if current_user.role == UserRole.teacher:
+        query = query.filter(Election.teacher_id == current_user.id)
+
+    elif current_user.role == UserRole.student:
+        query = (
+            query.join(ElectionVoter, ElectionVoter.election_id == Election.id)
+            .filter(ElectionVoter.student_id == current_user.id)
+            .filter(ElectionVoter.eligibility_status == EligibilityStatus.eligible)
+        )
 
     if search:
         query = query.filter(Election.title.ilike(f"%{search}%"))
@@ -98,11 +109,27 @@ def view_election_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    
     query = (
         db.query(Election)
         .options(joinedload(Election.candidates))
-        .filter(Election.status.in_([ElectionStatus.completed, ElectionStatus.cancelled, ElectionStatus.archived]))
+        .filter(
+            Election.status.in_([
+                ElectionStatus.completed,
+                ElectionStatus.cancelled,
+                ElectionStatus.archived,
+            ])
+        )
     )
+
+    if current_user.role == UserRole.teacher:
+        query = query.filter(Election.teacher_id == current_user.id)
+
+    elif current_user.role == UserRole.student:
+        query = (
+            query.join(ElectionVoter, ElectionVoter.election_id == Election.id)
+            .filter(ElectionVoter.student_id == current_user.id)
+        )
 
     if search:
         query = query.filter(Election.title.ilike(f"%{search}%"))
@@ -127,6 +154,29 @@ def view_election_details(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Election not found",
         )
+
+    if current_user.role == UserRole.teacher:
+        if election.teacher_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only view elections that you created",
+            )
+
+    elif current_user.role == UserRole.student:
+        voter_record = (
+            db.query(ElectionVoter)
+            .filter(
+                ElectionVoter.election_id == election.id,
+                ElectionVoter.student_id == current_user.id,
+            )
+            .first()
+        )
+
+        if not voter_record:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not eligible to view this election",
+            )
 
     return election
 
