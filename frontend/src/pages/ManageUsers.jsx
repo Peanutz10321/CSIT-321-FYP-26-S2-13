@@ -1,13 +1,20 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-
-const users = [
-  { id: 1, name: 'Alice Johnson', role: 'Student', status: 'Active' },
-  { id: 2, name: 'Brian Lee', role: 'Teacher', status: 'Suspended' },
-  { id: 3, name: 'Catherine Smith', role: 'Student', status: 'Active' },
-]
+import { getAdminUsers } from '../utils/api.js'
 
 function ManageUsers() {
   const navigate = useNavigate()
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getAdminUsers()
+      .then((data) => setUsers(data))
+      .catch(() => {
+        navigate('/login')
+      })
+      .finally(() => setLoading(false))
+  }, [navigate])
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">

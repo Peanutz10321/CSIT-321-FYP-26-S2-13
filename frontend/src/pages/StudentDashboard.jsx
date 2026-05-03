@@ -1,7 +1,22 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getCurrentUser } from '../utils/api.js'
 
 function StudentDashboard() {
   const navigate = useNavigate()
+  const [user, setUser] = useState(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken')
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => navigate('/login'))
+  }, [navigate])
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
@@ -9,7 +24,7 @@ function StudentDashboard() {
         <header className="flex flex-col gap-4 rounded-3xl bg-white p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-sky-600">Student Dashboard</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Welcome, Student Name</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Welcome, {user?.full_name || 'Student'}</h1>
           </div>
           <button
             onClick={() => navigate('/login')}

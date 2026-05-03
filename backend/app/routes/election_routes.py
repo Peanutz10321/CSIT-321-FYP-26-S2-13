@@ -135,6 +135,24 @@ def view_election_history(
 
     return query.order_by(Election.end_date.desc()).all()
 
+@router.get("/drafts", response_model=list[ElectionResponse])
+def view_draft_election_list(
+    search: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_teacher: User = Depends(require_teacher),
+):
+    query = (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.status == ElectionStatus.draft)
+        .filter(Election.teacher_id == current_teacher.id)
+    )
+
+    if search:
+        query = query.filter(Election.title.ilike(f"%{search}%"))
+
+    return query.order_by(Election.created_at.desc()).all()
+
 @router.get("/{election_id}", response_model=ElectionResponse)
 def view_election_details(
     election_id: UUID,

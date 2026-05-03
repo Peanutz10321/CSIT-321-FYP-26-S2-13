@@ -1,9 +1,24 @@
+import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { getCurrentUser } from '../utils/api.js'
 
 function ViewAccount() {
   const navigate = useNavigate()
   const location = useLocation()
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
+  const [user, setUser] = useState(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken')
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => navigate('/login'))
+  }, [navigate])
 
   const handleBack = () => {
     navigate(returnPath)
@@ -18,27 +33,27 @@ function ViewAccount() {
           <div className="mt-8 space-y-5 text-sm text-slate-700">
             <div>
               <p className="font-semibold text-slate-900">Username</p>
-              <p>student123</p>
+              <p>{user?.username || 'Loading...'}</p>
             </div>
             <div>
               <p className="font-semibold text-slate-900">Full Name</p>
-              <p>Alice Johnson</p>
+              <p>{user?.full_name || 'Loading...'}</p>
             </div>
             <div>
               <p className="font-semibold text-slate-900">School ID</p>
-              <p>SCH-00123</p>
+              <p>{user?.institution_id || 'Loading...'}</p>
             </div>
             <div>
               <p className="font-semibold text-slate-900">Email</p>
-              <p>alice.johnson@example.com</p>
+              <p>{user?.email || 'Loading...'}</p>
             </div>
             <div>
               <p className="font-semibold text-slate-900">Role</p>
-              <p>Student</p>
+              <p>{user?.role || 'Loading...'}</p>
             </div>
             <div>
               <p className="font-semibold text-slate-900">Account Status</p>
-              <p>Active</p>
+              <p>{user?.status || 'Loading...'}</p>
             </div>
           </div>
         </div>

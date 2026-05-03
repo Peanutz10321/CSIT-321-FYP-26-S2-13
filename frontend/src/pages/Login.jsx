@@ -1,11 +1,40 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { loginUser, decodeJwt } from '../utils/api.js'
 
 function Login() {
   const navigate = useNavigate()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
-    navigate('/student-dashboard')
+
+    try {
+      const response = await loginUser(email, password)
+      const token = response.access_token
+
+      if (!token) {
+        alert('Login failed: invalid response from server.')
+        return
+      }
+
+      localStorage.setItem('authToken', token)
+      const payload = decodeJwt(token)
+      const role = payload?.role
+
+      if (role === 'student') {
+        navigate('/student-dashboard')
+      } else if (role === 'teacher') {
+        navigate('/teacher-dashboard')
+      } else if (role === 'system_admin') {
+        navigate('/admin-dashboard')
+      } else {
+        alert('Login succeeded, but user role is not recognized.')
+      }
+    } catch (error) {
+      alert(error.message || 'Login failed. Please check your email and password.')
+    }
   }
 
   return (
@@ -23,9 +52,13 @@ function Login() {
             </label>
             <input
               id="email"
+              name="email"
               type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
               placeholder="Enter your email"
               className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              required
             />
           </div>
 
@@ -35,9 +68,13 @@ function Login() {
             </label>
             <input
               id="password"
+              name="password"
               type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter your password"
               className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              required
             />
           </div>
 
