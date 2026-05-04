@@ -79,6 +79,21 @@ async function getElectionDrafts() {
   return request('/elections/drafts')
 }
 
+async function getEligibleVoters(electionId) {
+  return request(`/elections/${electionId}/voters`)
+}
+
+async function addEligibleVoter(electionId, data) {
+  return request(`/elections/${electionId}/voters`, {
+    method: 'POST',
+    data,
+  })
+}
+
+async function addElectionVoter(electionId, institutionId) {
+  return addEligibleVoter(electionId, { institution_id: institutionId })
+}
+
 async function getElectionDetails(electionId) {
   return request(`/elections/${electionId}`)
 }
@@ -94,6 +109,10 @@ async function submitVote(data) {
     method: 'POST',
     data,
   })
+}
+
+async function getVoteHistory() {
+  return request('/votes/history')
 }
 
 async function createElectionDraft(data) {
@@ -131,7 +150,11 @@ export {
   getAdminUsers,
   getActiveElections,
   getElectionHistory,
+  getVoteHistory,
   getElectionDrafts,
+  getEligibleVoters,
+  addEligibleVoter,
+  addElectionVoter,
   getElectionDetails,
   createElectionDraft,
   activateElection,

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getElectionDetails, submitVote } from '../utils/api'
+import { getCurrentUser, getElectionDetails, submitVote } from '../utils/api'
 
 function CastVote() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [currentUser, setCurrentUser] = useState(null)
   const [election, setElection] = useState(null)
   const [selectedCandidateId, setSelectedCandidateId] = useState('')
   const [loading, setLoading] = useState(true)
+  const [userLoading, setUserLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const electionId = location.state?.electionId || new URLSearchParams(location.search).get('id')
 
@@ -32,6 +34,16 @@ function CastVote() {
       .finally(() => setLoading(false))
   }, [electionId, navigate])
 
+  useEffect(() => {
+    getCurrentUser()
+      .then(setCurrentUser)
+      .catch((error) => {
+        alert(`Unable to load user: ${error.message}`)
+        navigate('/login')
+      })
+      .finally(() => setUserLoading(false))
+  }, [navigate])
+
   const handleVote = async () => {
     if (!selectedCandidateId) {
       alert('Please select a candidate before submitting your vote.')
@@ -51,7 +63,7 @@ function CastVote() {
     }
   }
 
-  if (loading) {
+  if (loading || userLoading) {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-10">
         <div className="mx-auto max-w-4xl text-slate-700">Loading election details...</div>
@@ -59,9 +71,12 @@ function CastVote() {
     )
   }
 
-  if (!election) {
+  if (!election || !currentUser) {
     return null
   }
+
+  const isStudent = currentUser.role === 'student'
+  const roleLabel = currentUser.role === 'teacher' ? 'Teacher' : currentUser.role === 'admin' ? 'Admin' : currentUser.role
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
@@ -89,23 +104,29 @@ function CastVote() {
                   value={candidate.id}
                   checked={selectedCandidateId === candidate.id}
                   onChange={() => setSelectedCandidateId(candidate.id)}
-                  className="h-5 w-5 text-blue-600"
+                  disabled={!isStudent}
+                  className="h-5 w-5 text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </label>
             ))}
           </div>
+          {!isStudent && (
+            <p className="mt-4 text-sm text-slate-600">Voting is restricted to Students.</p>
+          )}
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <button
-            type="button"
-            onClick={handleVote}
-            disabled={submitting}
-            className="w-full rounded-2xl bg-blue-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? 'Submitting Vote...' : 'Submit Vote'}
-          </button>
-        </div>
+        {isStudent && (
+          <div className="rounded-3xl bg-white p-8 shadow-sm">
+            <button
+              type="button"
+              onClick={handleVote}
+              disabled={submitting}
+              className="w-full rounded-2xl bg-blue-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? 'Submitting Vote...' : 'Submit Vote'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

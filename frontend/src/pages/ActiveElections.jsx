@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getActiveElections } from '../utils/api.js'
+import { getActiveElections, getCurrentUser } from '../utils/api.js'
 
 function ActiveElections() {
   const navigate = useNavigate()
   const [activeElections, setActiveElections] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    getCurrentUser()
+      .then(setCurrentUser)
+      .catch(() => {
+        navigate('/login')
+      })
+
     getActiveElections()
       .then((data) => setActiveElections(data))
       .catch(() => {
@@ -60,7 +67,7 @@ function ActiveElections() {
                     onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
                     className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
-                    View
+                    {currentUser?.role === 'student' ? 'Vote' : 'View Details'}
                   </button>
                 </div>
               </div>
