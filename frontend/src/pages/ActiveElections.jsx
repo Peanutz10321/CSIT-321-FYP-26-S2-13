@@ -61,7 +61,14 @@ function ActiveElections() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-lg font-semibold text-slate-900">{election.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{election.end_date ? new Date(election.end_date).toLocaleDateString() : 'Active election'}</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                      {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      <span className="font-medium text-slate-700">End Time:</span>{' '}
+                      {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
+                    </p>
                   </div>
                   <button
                     onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}

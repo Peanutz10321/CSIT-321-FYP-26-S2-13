@@ -102,6 +102,14 @@ function ElectionDraft() {
                           Candidates: {draft.candidates.map((candidate) => candidate.name).join(', ')}
                         </p>
                       ) : null}
+                      <p className="mt-3 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                        {draft.start_date ? new Date(draft.start_date).toLocaleString() : 'TBD'}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">End Time:</span>{' '}
+                        {draft.end_date ? new Date(draft.end_date).toLocaleString() : 'TBD'}
+                      </p>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <button

@@ -5,15 +5,17 @@ import { getElectionHistory } from '../utils/api.js'
 function ElectionHistory() {
   const [elections, setElections] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const navigate = useNavigate()
   const location = useLocation()
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
 
   useEffect(() => {
+    setLoading(true)
     getElectionHistory()
-      .then((data) => setElections(data))
-      .catch(() => {
-        navigate('/login')
+      .then((data) => setElections(data || []))
+      .catch((err) => {
+        setError(err.message || 'Failed to load election history.')
       })
       .finally(() => setLoading(false))
   }, [navigate])
@@ -21,12 +23,12 @@ function ElectionHistory() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-10">
-        <div className="mx-auto max-w-5xl text-slate-700">Loading data...</div>
+        <div className="mx-auto max-w-5xl text-slate-700">Loading election history...</div>
       </div>
     )
   }
 
-  const noData = elections.length === 0
+  const noData = !elections || elections.length === 0
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
@@ -54,38 +56,51 @@ function ElectionHistory() {
         </div>
 
         <div className="space-y-4">
-          {noData ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
-              No data available at the moment.
-            </div>
-          ) : (
-            elections.map((election) => (
-              <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{election.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{election.end_date ? new Date(election.end_date).toLocaleDateString() : 'No end date'}</p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <button
-                      onClick={() => navigate('/election-results')}
-                      className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-                    >
-                      View Results
-                    </button>
-                    <button
-                      onClick={() => navigate('/election-detail')}
-                      className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-                    >
-                      View Details
-                    </button>
+            {error && (
+              <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-center text-rose-700">
+                {error}
+              </div>
+            )}
+            {noData ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+                No completed elections found.
+              </div>
+            ) : (
+              elections.map((election) => (
+                <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{election.title}</p>
+                      <p className="mt-1 text-sm text-slate-500">{election.status.replace('_', ' ').toUpperCase()}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                        {election.start_date ? new Date(election.start_date).toLocaleString() : 'No start date'}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">End Time:</span>{' '}
+                        {election.end_date ? new Date(election.end_date).toLocaleString() : 'No end date'}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-600">{election.candidates?.length ?? 0} candidates</p>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        onClick={() => navigate('/election-results', { state: { electionId: election.id } })}
+                        className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      >
+                        View Results
+                      </button>
+                      <button
+                        onClick={() => navigate('/election-detail', { state: { electionId: election.id } })}
+                        className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                      >
+                        View Details
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
-
+              ))
+            )}
+          </div>
         <div className="pt-6 text-right">
           <button
             onClick={() => navigate(returnPath)}
