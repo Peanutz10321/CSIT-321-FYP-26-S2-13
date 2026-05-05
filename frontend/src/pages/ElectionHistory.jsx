@@ -87,7 +87,7 @@ function ElectionHistory() {
                   No elections match your search.
                 </div>
               ) : (
-              elections.map((election) => (
+              filteredElections.map((election) => (
                 <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -119,7 +119,8 @@ function ElectionHistory() {
                     </div>
                   </div>
                 </div>
-              );
+              ))
+            )
             })()}
           </div>
         <div className="pt-6 text-right">
