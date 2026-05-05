@@ -7,6 +7,7 @@ function ActiveElections() {
   const [activeElections, setActiveElections] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     getCurrentUser()
@@ -45,41 +46,52 @@ function ActiveElections() {
               id="search"
               type="search"
               placeholder="Search elections"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
           </div>
         </div>
 
         <div className="space-y-4">
-          {noData ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
-              No data available at the moment.
-            </div>
-          ) : (
-            activeElections.map((election) => (
-              <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">{election.title}</p>
-                    <p className="mt-2 text-sm text-slate-500">
-                      <span className="font-medium text-slate-700">Start Time:</span>{' '}
-                      {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      <span className="font-medium text-slate-700">End Time:</span>{' '}
-                      {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
-                    className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-                  >
-                    {currentUser?.role === 'student' ? 'Vote' : 'View Details'}
-                  </button>
-                </div>
+          {(() => {
+            const filteredElections = activeElections.filter((election) =>
+              election.title.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            return noData && searchTerm === '' ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+                No data available at the moment.
               </div>
-            ))
-          )}
+            ) : filteredElections.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+                No elections match your search.
+              </div>
+            ) : (
+              filteredElections.map((election) => (
+                <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">{election.title}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                        {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        <span className="font-medium text-slate-700">End Time:</span>{' '}
+                        {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
+                      className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                    >
+                      {currentUser?.role === 'student' ? 'Vote' : 'View Details'}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )
+          })()}
         </div>
       </div>
     </div>

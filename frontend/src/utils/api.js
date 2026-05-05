@@ -98,6 +98,13 @@ async function getElectionDetails(electionId) {
   return request(`/elections/${electionId}`)
 }
 
+async function updateElection(electionId, data) {
+  return request(`/elections/${electionId}`, {
+    method: 'PUT',
+    data,
+  })
+}
+
 async function activateElection(electionId) {
   return request(`/elections/${electionId}/activate`, {
     method: 'PATCH',
@@ -113,6 +120,10 @@ async function submitVote(data) {
 
 async function getVoteHistory() {
   return request('/votes/history')
+}
+
+async function getVoteDetails(voteId) {
+  return request(`/votes/${voteId}`)
 }
 
 async function createElectionDraft(data) {
@@ -151,11 +162,13 @@ export {
   getActiveElections,
   getElectionHistory,
   getVoteHistory,
+  getVoteDetails,
   getElectionDrafts,
   getEligibleVoters,
   addEligibleVoter,
   addElectionVoter,
   getElectionDetails,
+  updateElection,
   createElectionDraft,
   activateElection,
   submitVote,

@@ -31,10 +31,10 @@ function App() {
         <Route path="/active-elections" element={<ActiveElections />} />
         <Route path="/cast-vote" element={<CastVote />} />
         <Route path="/vote-history" element={<VoteHistory />} />
-        <Route path="/vote-receipt" element={<VoteReceipt />} />
+        <Route path="/vote-receipt/:voteId" element={<VoteReceipt />} />
         <Route path="/create-election" element={<CreateElection />} />
         <Route path="/election-drafts" element={<ElectionDraft />} />
-        <Route path="/update-election" element={<UpdateElection />} />
+        <Route path="/update-election/:electionId" element={<UpdateElection />} />
         <Route path="/election-history" element={<ElectionHistory />} />
         <Route path="/election-results" element={<ElectionResults />} />
         <Route path="/election-detail" element={<ElectionDetail />} />

@@ -6,6 +6,7 @@ function ElectionHistory() {
   const [elections, setElections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [searchTerm, setSearchTerm] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
@@ -37,6 +38,18 @@ function ElectionHistory() {
           <p className="text-sm font-medium uppercase tracking-wide text-slate-600">Election History</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900">Election History</h1>
 
+          <div className="mt-6 max-w-md">
+            <label htmlFor="search" className="sr-only">Search</label>
+            <input
+              id="search"
+              type="search"
+              placeholder="Search elections"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">Start Date</span>
@@ -61,11 +74,19 @@ function ElectionHistory() {
                 {error}
               </div>
             )}
-            {noData ? (
+            {noData && searchTerm === '' ? (
               <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
                 No completed elections found.
               </div>
-            ) : (
+            ) : (() => {
+              const filteredElections = elections.filter((election) =>
+                election.title.toLowerCase().includes(searchTerm.toLowerCase())
+              )
+              return filteredElections.length === 0 ? (
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+                  No elections match your search.
+                </div>
+              ) : (
               elections.map((election) => (
                 <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -98,8 +119,8 @@ function ElectionHistory() {
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+              );
+            })()}
           </div>
         <div className="pt-6 text-right">
           <button
