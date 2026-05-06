@@ -67,7 +67,7 @@ function VoteHistory() {
                     <p className="mt-1 text-sm text-slate-500">Receipt: {item.receipt_code}</p>
                   </div>
                   <button
-                    onClick={() => navigate('/vote-receipt', { state: { voteId: item.id } })}
+                    onClick={() => navigate(`/vote-receipt/${item.id}`)}
                     className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
                     View Receipt
