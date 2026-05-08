@@ -58,7 +58,6 @@ function UpdateElection() {
       await addElectionVoter(electionId, institutionId)
       alert('Voter added successfully!')
       setNewInstitutionId('')
-      // Refresh voters list
       const votersData = await getEligibleVoters(electionId)
       setEligibleVoters(votersData)
     } catch (error) {
@@ -124,10 +123,10 @@ function UpdateElection() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-10">
+      <div className="min-h-screen bg-slate-900 px-4 py-10">
         <div className="mx-auto max-w-4xl">
-          <div className="rounded-3xl bg-white p-8 shadow-sm text-center">
-            <p className="text-slate-600">Loading election details...</p>
+          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm text-center">
+            <p className="text-slate-400">Loading election details...</p>
           </div>
         </div>
       </div>
@@ -136,10 +135,10 @@ function UpdateElection() {
 
   if (!election) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-10">
+      <div className="min-h-screen bg-slate-900 px-4 py-10">
         <div className="mx-auto max-w-4xl">
-          <div className="rounded-3xl bg-white p-8 shadow-sm text-center">
-            <p className="text-slate-600">Election not found</p>
+          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm text-center">
+            <p className="text-slate-400">Election not found</p>
           </div>
         </div>
       </div>
@@ -147,14 +146,14 @@ function UpdateElection() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-amber-600">Update Election Details</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Update Election Details</h1>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Update Election Details</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Update Election Details</h1>
           <div className="mt-8 space-y-6">
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="title" className="block text-sm font-medium text-slate-300">
                 Election Title
               </label>
               <input
@@ -163,37 +162,37 @@ function UpdateElection() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Enter election title"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
               />
             </div>
             <div className="grid gap-6 sm:grid-cols-2">
               <div>
-                <label htmlFor="start" className="block text-sm font-medium text-slate-700">
-                  Start Date & Time
+                <label htmlFor="start" className="block text-sm font-medium text-slate-300">
+                  Start Date &amp; Time
                 </label>
                 <input
                   id="start"
                   type="datetime-local"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
                 />
               </div>
               <div>
-                <label htmlFor="end" className="block text-sm font-medium text-slate-700">
-                  End Date & Time
+                <label htmlFor="end" className="block text-sm font-medium text-slate-300">
+                  End Date &amp; Time
                 </label>
                 <input
                   id="end"
                   type="datetime-local"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
                 />
               </div>
             </div>
             <div>
-              <label htmlFor="candidates" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="candidates" className="block text-sm font-medium text-slate-300">
                 Candidates
               </label>
               <textarea
@@ -202,11 +201,11 @@ function UpdateElection() {
                 value={candidatesText}
                 onChange={(event) => setCandidatesText(event.target.value)}
                 placeholder="Enter candidate names, separated by commas or new lines"
-                className="mt-2 block w-full rounded-3xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 block w-full rounded-3xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
               />
             </div>
             <div>
-              <label htmlFor="eligible-voters" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="eligible-voters" className="block text-sm font-medium text-slate-300">
                 Eligible Voters
               </label>
               <div className="mt-2 flex gap-3">
@@ -216,7 +215,7 @@ function UpdateElection() {
                   value={newInstitutionId}
                   onChange={(e) => setNewInstitutionId(e.target.value)}
                   placeholder="Enter institution ID"
-                  className="flex-1 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="flex-1 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
                 />
                 <button
                   type="button"
@@ -229,14 +228,14 @@ function UpdateElection() {
               </div>
 
               {eligibleVoters.length > 0 && (
-                <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-700">Eligible Voters ({eligibleVoters.length})</p>
+                <div className="mt-4 rounded-3xl border border-slate-700 bg-slate-700 p-4">
+                  <p className="text-sm font-medium text-slate-300">Eligible Voters ({eligibleVoters.length})</p>
                   <ul className="mt-3 space-y-2">
                     {eligibleVoters.map((voter) => (
-                      <li key={voter.id} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      <li key={voter.id} className="flex items-center justify-between rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3">
                         <div>
-                          <span className="text-sm font-medium text-slate-900">{voter.student_full_name}</span>
-                          <span className="ml-2 text-sm text-slate-500">({voter.student_institution_id})</span>
+                          <span className="text-sm font-medium text-slate-100">{voter.student_full_name}</span>
+                          <span className="ml-2 text-sm text-slate-400">({voter.student_institution_id})</span>
                         </div>
                       </li>
                     ))}
@@ -252,14 +251,14 @@ function UpdateElection() {
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="w-full rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
           <button
             type="button"
             onClick={handleCancel}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
+            className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
           >
             Cancel
           </button>

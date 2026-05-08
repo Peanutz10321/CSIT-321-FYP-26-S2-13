@@ -38,7 +38,10 @@ async function request(path, options = {}) {
   const payload = text ? JSON.parse(text) : null
 
   if (!response.ok) {
-    const message = payload?.detail || payload?.message || response.statusText || 'Request failed'
+    const detail = payload?.detail
+    const message = Array.isArray(detail)
+      ? detail.map((e) => e.msg || e.message || JSON.stringify(e)).join('; ')
+      : detail || payload?.message || response.statusText || 'Request failed'
     throw new Error(message)
   }
 
@@ -133,6 +136,12 @@ async function createElectionDraft(data) {
   })
 }
 
+async function deleteElection(electionId) {
+  return request(`/elections/${electionId}`, {
+    method: 'DELETE',
+  })
+}
+
 function decodeJwt(token) {
   if (!token) return null
   const parts = token.split('.')
@@ -170,6 +179,7 @@ export {
   getElectionDetails,
   updateElection,
   createElectionDraft,
+  deleteElection,
   activateElection,
   submitVote,
   decodeJwt,

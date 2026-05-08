@@ -12,7 +12,11 @@ function CreateElection() {
   const [eligibleVoters, setEligibleVoters] = useState([])
   const [saving, setSaving] = useState(false)
 
+  const normalizeDateTime = (dt) => (dt && dt.length === 16 ? `${dt}:00` : dt)
+
   const handleSaveDraft = async () => {
+    console.log('[CreateElection] handleSaveDraft called')
+
     const candidateNames = candidatesText
       .split(/\r?\n|,/)
       .map((item) => item.trim())
@@ -39,8 +43,8 @@ function CreateElection() {
       const payload = {
         title: title.trim(),
         description: null,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: normalizeDateTime(startDate),
+        end_date: normalizeDateTime(endDate),
         candidates: candidateNames.map((name, index) => ({
           name,
           description: null,
@@ -49,7 +53,9 @@ function CreateElection() {
         })),
       }
 
+      console.log('[CreateElection] Sending draft payload:', payload)
       const election = await createElectionDraft(payload)
+      console.log('[CreateElection] Draft created:', election)
 
       const draftVoters = [
         ...eligibleVoters,
@@ -65,6 +71,7 @@ function CreateElection() {
       alert('Draft created successfully!')
       navigate('/election-drafts')
     } catch (error) {
+      console.error('[CreateElection] handleSaveDraft error:', error)
       alert(`Failed to create draft: ${error.message}`)
     } finally {
       setSaving(false)
@@ -73,7 +80,7 @@ function CreateElection() {
 
   const parseEligibleVoters = (text) =>
     text
-      .split(/\r?\n|,/) 
+      .split(/\r?\n|,/)
       .map((item) => item.trim())
       .filter(Boolean)
 
@@ -97,8 +104,10 @@ function CreateElection() {
   }
 
   const handlePublish = async () => {
+    console.log('[CreateElection] handlePublish called')
+
     const candidateNames = candidatesText
-      .split(/\r?\n|,/) 
+      .split(/\r?\n|,/)
       .map((item) => item.trim())
       .filter(Boolean)
 
@@ -128,8 +137,8 @@ function CreateElection() {
       const payload = {
         title: title.trim(),
         description: null,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: normalizeDateTime(startDate),
+        end_date: normalizeDateTime(endDate),
         candidates: candidateNames.map((name, index) => ({
           name,
           description: null,
@@ -138,7 +147,9 @@ function CreateElection() {
         })),
       }
 
+      console.log('[CreateElection] Sending publish payload:', payload)
       const election = await createElectionDraft(payload)
+      console.log('[CreateElection] Draft created for publish:', election)
 
       const publishVoters = [
         ...eligibleVoters,
@@ -153,6 +164,7 @@ function CreateElection() {
       alert('Election published successfully!')
       navigate('/active-elections')
     } catch (error) {
+      console.error('[CreateElection] handlePublish error:', error)
       alert(`Failed to publish election: ${error.message}`)
     } finally {
       setSaving(false)
@@ -160,14 +172,14 @@ function CreateElection() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-amber-600">Create Election</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Create Election</h1>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Create Election</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Create Election</h1>
           <div className="mt-8 space-y-6">
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="title" className="block text-sm font-medium text-slate-300">
                 Election Title
               </label>
               <input
@@ -177,13 +189,13 @@ function CreateElection() {
                 onChange={(event) => setTitle(event.target.value)}
                 type="text"
                 placeholder="Enter election title"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
               />
             </div>
             <div className="grid gap-6 sm:grid-cols-2">
               <div>
-                <label htmlFor="start" className="block text-sm font-medium text-slate-700">
-                  Start Date & Time
+                <label htmlFor="start" className="block text-sm font-medium text-slate-300">
+                  Start Date &amp; Time
                 </label>
                 <input
                   id="start"
@@ -191,12 +203,12 @@ function CreateElection() {
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
                   type="datetime-local"
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
                 />
               </div>
               <div>
-                <label htmlFor="end" className="block text-sm font-medium text-slate-700">
-                  End Date & Time
+                <label htmlFor="end" className="block text-sm font-medium text-slate-300">
+                  End Date &amp; Time
                 </label>
                 <input
                   id="end"
@@ -204,12 +216,12 @@ function CreateElection() {
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
                   type="datetime-local"
-                  className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
                 />
               </div>
             </div>
             <div>
-              <label htmlFor="candidates" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="candidates" className="block text-sm font-medium text-slate-300">
                 Candidates
               </label>
               <textarea
@@ -219,11 +231,11 @@ function CreateElection() {
                 value={candidatesText}
                 onChange={(event) => setCandidatesText(event.target.value)}
                 placeholder="Enter candidate names, separated by commas or new lines"
-                className="mt-2 block w-full rounded-3xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 block w-full rounded-3xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
               />
             </div>
             <div>
-              <label htmlFor="eligible-voters" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="eligible-voters" className="block text-sm font-medium text-slate-300">
                 Eligible Voters
               </label>
               <textarea
@@ -233,7 +245,7 @@ function CreateElection() {
                 value={eligibleVotersText}
                 onChange={(event) => setEligibleVotersText(event.target.value)}
                 placeholder="Enter institution IDs, separated by commas or new lines"
-                className="mt-2 block w-full rounded-3xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 block w-full rounded-3xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
               />
               <button
                 type="button"
@@ -244,16 +256,16 @@ function CreateElection() {
               </button>
 
               {eligibleVoters.length > 0 && (
-                <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-medium text-slate-700">Eligible Voters</p>
+                <div className="mt-4 rounded-3xl border border-slate-700 bg-slate-700 p-4">
+                  <p className="text-sm font-medium text-slate-300">Eligible Voters</p>
                   <ul className="mt-3 space-y-2">
                     {eligibleVoters.map((institutionId) => (
-                      <li key={institutionId} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <span className="text-sm text-slate-900">{institutionId}</span>
+                      <li key={institutionId} className="flex items-center justify-between rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3">
+                        <span className="text-sm text-slate-100">{institutionId}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveEligibleVoter(institutionId)}
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                          className="rounded-full bg-slate-600 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-500"
                         >
                           Remove
                         </button>
@@ -271,16 +283,17 @@ function CreateElection() {
             type="button"
             onClick={handleSaveDraft}
             disabled={saving}
-            className="w-full rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? 'Saving Draft...' : 'Save as Draft'}
           </button>
           <button
             type="button"
             onClick={handlePublish}
-            className="w-full rounded-2xl bg-amber-500 px-6 py-4 text-base font-semibold text-slate-900 transition hover:bg-amber-600"
+            disabled={saving}
+            className="w-full rounded-2xl bg-amber-500 px-6 py-4 text-base font-semibold text-slate-900 transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Publish Now
+            {saving ? 'Publishing...' : 'Publish Now'}
           </button>
         </div>
       </div>

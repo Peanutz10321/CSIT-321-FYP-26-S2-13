@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { activateElection, getElectionDrafts } from '../utils/api'
+import { activateElection, deleteElection, getElectionDrafts } from '../utils/api'
 
 function ElectionDraft() {
   const navigate = useNavigate()
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [activatingId, setActivatingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -21,11 +22,11 @@ function ElectionDraft() {
   const noDrafts = !loading && drafts.length === 0
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-5xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-amber-600">Election Drafts</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Election Drafts</h1>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Election Drafts</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Election Drafts</h1>
           <div className="mt-6 max-w-md">
             <label htmlFor="search" className="sr-only">Search</label>
             <input
@@ -34,15 +35,15 @@ function ElectionDraft() {
               placeholder="Search drafts"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
             />
           </div>
         </div>
 
         {loading ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-700">Loading drafts...</div>
+          <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">Loading drafts...</div>
         ) : noDrafts && searchTerm === '' ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-700">
+          <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">
             No drafts available. Create one to get started!
           </div>
         ) : (() => {
@@ -50,28 +51,28 @@ function ElectionDraft() {
             draft.title.toLowerCase().includes(searchTerm.toLowerCase())
           )
           return filteredDrafts.length === 0 ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 text-slate-700">
+            <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">
               No drafts match your search.
             </div>
           ) : (
           <div className="space-y-4">
             {filteredDrafts.map((draft) => {
               return (
-                <div key={draft.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div key={draft.id} className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <p className="text-lg font-semibold text-slate-900">{draft.title}</p>
+                      <p className="text-lg font-semibold text-slate-100">{draft.title}</p>
                       {draft.candidates?.length ? (
-                        <p className="mt-2 text-sm text-slate-500">
+                        <p className="mt-2 text-sm text-slate-400">
                           Candidates: {draft.candidates.map((candidate) => candidate.name).join(', ')}
                         </p>
                       ) : null}
-                      <p className="mt-3 text-sm text-slate-500">
-                        <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                      <p className="mt-3 text-sm text-slate-400">
+                        <span className="font-medium text-slate-300">Start Time:</span>{' '}
                         {draft.start_date ? new Date(draft.start_date).toLocaleString() : 'TBD'}
                       </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        <span className="font-medium text-slate-700">End Time:</span>{' '}
+                      <p className="mt-1 text-sm text-slate-400">
+                        <span className="font-medium text-slate-300">End Time:</span>{' '}
                         {draft.end_date ? new Date(draft.end_date).toLocaleString() : 'TBD'}
                       </p>
                     </div>
@@ -79,7 +80,7 @@ function ElectionDraft() {
                       <button
                         type="button"
                         onClick={() => navigate(`/update-election/${draft.id}`)}
-                        className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        className="inline-flex items-center justify-center rounded-2xl bg-slate-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-600"
                       >
                         Edit
                       </button>
@@ -102,20 +103,31 @@ function ElectionDraft() {
                           }
                         }}
                         disabled={activatingId === draft.id}
-                        className="inline-flex items-center justify-center rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center justify-center rounded-2xl border border-slate-600 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {activatingId === draft.id ? 'Activating...' : 'Activate'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (window.confirm('Are you sure you want to delete this draft?')) {
-                            alert('Draft deleted!')
+                        onClick={async () => {
+                          if (!window.confirm('Are you sure you want to delete this draft?')) {
+                            return
+                          }
+                          setDeletingId(draft.id)
+                          try {
+                            await deleteElection(draft.id)
+                            setDrafts((current) => current.filter((d) => d.id !== draft.id))
+                            alert('Draft deleted successfully!')
+                          } catch (error) {
+                            alert(`Failed to delete draft: ${error.message}`)
+                          } finally {
+                            setDeletingId(null)
                           }
                         }}
-                        className="inline-flex items-center justify-center rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+                        disabled={deletingId === draft.id}
+                        className="inline-flex items-center justify-center rounded-2xl border border-slate-600 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Delete
+                        {deletingId === draft.id ? 'Deleting...' : 'Delete'}
                       </button>
                     </div>
                   </div>
@@ -129,7 +141,7 @@ function ElectionDraft() {
         <div className="pt-4">
           <button
             onClick={() => navigate('/teacher-dashboard')}
-            className="inline-flex items-center justify-center rounded-2xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+            className="inline-flex items-center justify-center rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
           >
             Back to Dashboard
           </button>

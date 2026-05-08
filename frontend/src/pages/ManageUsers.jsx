@@ -17,23 +17,23 @@ function ManageUsers() {
   }, [navigate])
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-6xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-rose-600">User Management</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">User Management</h1>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-rose-400">User Management</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">User Management</h1>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-4 gap-4 border-b border-slate-200 bg-slate-100 px-6 py-4 text-sm font-semibold text-slate-700">
+        <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm">
+          <div className="grid grid-cols-4 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
             <span>Name</span>
             <span>Role</span>
             <span>Status</span>
             <span className="text-right">Actions</span>
           </div>
-          <div className="divide-y divide-slate-200">
+          <div className="divide-y divide-slate-700">
             {users.map((user) => (
-              <div key={user.id} className="grid grid-cols-4 gap-4 px-6 py-5 text-sm text-slate-700 items-center">
+              <div key={user.id} className="grid grid-cols-4 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
                 <span>{user.name}</span>
                 <span>{user.role}</span>
                 <span>{user.status}</span>
@@ -49,7 +49,7 @@ function ManageUsers() {
                   </button>
                   <button
                     type="button"
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-slate-900 transition hover:bg-slate-100"
+                    className="rounded-2xl border border-slate-600 bg-slate-800 px-4 py-2 text-slate-100 transition hover:bg-slate-700"
                   >
                     Toggle Status
                   </button>
@@ -59,10 +59,10 @@ function ManageUsers() {
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
           <button
             onClick={() => navigate('/admin-dashboard')}
-            className="rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-800"
+            className="rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600"
           >
             Back to Dashboard
           </button>

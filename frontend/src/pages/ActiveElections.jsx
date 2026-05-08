@@ -26,8 +26,8 @@ function ActiveElections() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-10">
-        <div className="mx-auto max-w-5xl text-slate-700">Loading data...</div>
+      <div className="min-h-screen bg-slate-900 px-4 py-10">
+        <div className="mx-auto max-w-5xl text-slate-300">Loading data...</div>
       </div>
     )
   }
@@ -35,11 +35,11 @@ function ActiveElections() {
   const noData = activeElections.length === 0
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-8 rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-sky-600">My Active Elections</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Active Elections</h1>
+        <div className="mb-8 rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-sky-400">My Active Elections</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Active Elections</h1>
           <div className="mt-6 max-w-md">
             <label htmlFor="search" className="sr-only">Search</label>
             <input
@@ -48,7 +48,7 @@ function ActiveElections() {
               placeholder="Search elections"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
             />
           </div>
         </div>
@@ -59,25 +59,25 @@ function ActiveElections() {
               election.title.toLowerCase().includes(searchTerm.toLowerCase())
             )
             return noData && searchTerm === '' ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+              <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-center text-slate-400">
                 No data available at the moment.
               </div>
             ) : filteredElections.length === 0 ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center text-slate-500">
+              <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-center text-slate-400">
                 No elections match your search.
               </div>
             ) : (
               filteredElections.map((election) => (
-                <div key={election.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div key={election.id} className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <p className="text-lg font-semibold text-slate-900">{election.title}</p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        <span className="font-medium text-slate-700">Start Time:</span>{' '}
+                      <p className="text-lg font-semibold text-slate-100">{election.title}</p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        <span className="font-medium text-slate-300">Start Time:</span>{' '}
                         {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
                       </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        <span className="font-medium text-slate-700">End Time:</span>{' '}
+                      <p className="mt-1 text-sm text-slate-400">
+                        <span className="font-medium text-slate-300">End Time:</span>{' '}
                         {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
                       </p>
                     </div>
@@ -92,6 +92,15 @@ function ActiveElections() {
               ))
             )
           })()}
+        </div>
+
+        <div className="mt-8 flex justify-end">
+          <button
+            onClick={() => navigate('/student-dashboard')}
+            className="inline-flex items-center gap-2 rounded-2xl bg-slate-800 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
+          >
+            Back to Dashboard
+          </button>
         </div>
       </div>
     </div>

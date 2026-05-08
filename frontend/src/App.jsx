@@ -41,7 +41,7 @@ function App() {
         <Route path="/manage-users" element={<ManageUsers />} />
         <Route path="/view-account" element={<ViewAccount />} />
         <Route path="/update-account" element={<UpdateAccount />} />
-        <Route path="*" element={<div className="min-h-screen flex items-center justify-center text-slate-700 text-xl">404 — Page Not Found</div>} />
+        <Route path="*" element={<div className="min-h-screen flex items-center justify-center text-slate-300 text-xl">404 — Page Not Found</div>} />
       </Routes>
     </BrowserRouter>
   )

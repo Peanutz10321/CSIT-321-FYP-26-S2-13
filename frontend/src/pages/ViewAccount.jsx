@@ -25,34 +25,34 @@ function ViewAccount() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-600">Account Details</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Account Details</h1>
-          <div className="mt-8 space-y-5 text-sm text-slate-700">
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Account Details</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Account Details</h1>
+          <div className="mt-8 space-y-5 text-sm text-slate-300">
             <div>
-              <p className="font-semibold text-slate-900">Username</p>
+              <p className="font-semibold text-slate-100">Username</p>
               <p>{user?.username || 'Loading...'}</p>
             </div>
             <div>
-              <p className="font-semibold text-slate-900">Full Name</p>
+              <p className="font-semibold text-slate-100">Full Name</p>
               <p>{user?.full_name || 'Loading...'}</p>
             </div>
             <div>
-              <p className="font-semibold text-slate-900">School ID</p>
+              <p className="font-semibold text-slate-100">School ID</p>
               <p>{user?.institution_id || 'Loading...'}</p>
             </div>
             <div>
-              <p className="font-semibold text-slate-900">Email</p>
+              <p className="font-semibold text-slate-100">Email</p>
               <p>{user?.email || 'Loading...'}</p>
             </div>
             <div>
-              <p className="font-semibold text-slate-900">Role</p>
+              <p className="font-semibold text-slate-100">Role</p>
               <p>{user?.role || 'Loading...'}</p>
             </div>
             <div>
-              <p className="font-semibold text-slate-900">Account Status</p>
+              <p className="font-semibold text-slate-100">Account Status</p>
               <p>{user?.status || 'Loading...'}</p>
             </div>
           </div>
@@ -67,7 +67,7 @@ function ViewAccount() {
           </button>
           <button
             onClick={handleBack}
-            className="rounded-2xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
+            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
           >
             Back
           </button>

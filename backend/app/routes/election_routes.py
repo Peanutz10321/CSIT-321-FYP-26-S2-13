@@ -278,6 +278,40 @@ def update_draft_election(
 
     return updated_election
 
+@router.delete("/{election_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_draft_election(
+    election_id: UUID,
+    db: Session = Depends(get_db),
+    current_teacher: User = Depends(require_teacher),
+):
+    election = (
+        db.query(Election)
+        .filter(Election.id == election_id)
+        .first()
+    )
+
+    if not election:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Election not found",
+        )
+
+    if election.teacher_id != current_teacher.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete elections that you created",
+        )
+
+    if election.status != ElectionStatus.draft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only draft elections can be deleted",
+        )
+
+    db.delete(election)
+    db.commit()
+
+
 @router.patch("/{election_id}/extend-deadline", response_model=ElectionResponse)
 def extend_active_election_deadline(
     election_id: UUID,

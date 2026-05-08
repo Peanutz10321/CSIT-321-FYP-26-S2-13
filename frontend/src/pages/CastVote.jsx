@@ -65,8 +65,8 @@ function CastVote() {
 
   if (loading || userLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-10">
-        <div className="mx-auto max-w-4xl text-slate-700">Loading election details...</div>
+      <div className="min-h-screen bg-slate-900 px-4 py-10">
+        <div className="mx-auto max-w-4xl text-slate-300">Loading election details...</div>
       </div>
     )
   }
@@ -76,27 +76,26 @@ function CastVote() {
   }
 
   const isStudent = currentUser.role === 'student'
-  const roleLabel = currentUser.role === 'teacher' ? 'Teacher' : currentUser.role === 'admin' ? 'Admin' : currentUser.role
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Election Details</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">{election.title}</h1>
-          <p className="mt-2 text-sm text-slate-600">Election ID: {election.id}</p>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Election Details</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">{election.title}</h1>
+          <p className="mt-2 text-sm text-slate-400">Election ID: {election.id}</p>
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Choose a Candidate</h2>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-100">Choose a Candidate</h2>
           <div className="mt-6 space-y-4">
             {election.candidates.map((candidate) => (
               <label
                 key={candidate.id}
-                className="flex cursor-pointer items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5 transition hover:border-blue-300"
+                className="flex cursor-pointer items-center justify-between rounded-3xl border border-slate-600 bg-slate-700 px-5 py-5 transition hover:border-blue-500"
               >
                 <div>
-                  <p className="text-base font-medium text-slate-900">{candidate.name}</p>
+                  <p className="text-base font-medium text-slate-100">{candidate.name}</p>
                 </div>
                 <input
                   type="radio"
@@ -111,12 +110,12 @@ function CastVote() {
             ))}
           </div>
           {!isStudent && (
-            <p className="mt-4 text-sm text-slate-600">Voting is restricted to Students.</p>
+            <p className="mt-4 text-sm text-slate-400">Voting is restricted to Students.</p>
           )}
         </div>
 
         {isStudent && (
-          <div className="rounded-3xl bg-white p-8 shadow-sm">
+          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
             <button
               type="button"
               onClick={handleVote}

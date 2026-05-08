@@ -61,14 +61,14 @@ function UpdateAccount() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
+    <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-600">Update Account</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Update Account</h1>
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Update Account</p>
+          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Update Account</h1>
           <div className="mt-8 space-y-6">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="username" className="block text-sm font-medium text-slate-300">
                 Username
               </label>
               <input
@@ -78,11 +78,11 @@ function UpdateAccount() {
                 onChange={handleInputChange}
                 type="text"
                 placeholder="Username"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
               />
             </div>
             <div>
-              <label htmlFor="full_name" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="full_name" className="block text-sm font-medium text-slate-300">
                 Full Name
               </label>
               <input
@@ -92,11 +92,11 @@ function UpdateAccount() {
                 onChange={handleInputChange}
                 type="text"
                 placeholder="Full Name"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
               />
             </div>
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="email" className="block text-sm font-medium text-slate-300">
                 Email
               </label>
               <input
@@ -106,11 +106,11 @@ function UpdateAccount() {
                 onChange={handleInputChange}
                 type="email"
                 placeholder="Email"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="password" className="block text-sm font-medium text-slate-300">
                 New Password
               </label>
               <input
@@ -120,7 +120,7 @@ function UpdateAccount() {
                 onChange={handleInputChange}
                 type="password"
                 placeholder="New Password"
-                className="mt-2 block w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
               />
             </div>
           </div>
@@ -138,7 +138,7 @@ function UpdateAccount() {
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="rounded-2xl border border-slate-300 bg-white px-6 py-4 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
+            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
           >
             Cancel
           </button>
