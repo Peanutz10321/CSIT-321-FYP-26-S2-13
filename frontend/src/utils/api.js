@@ -48,6 +48,13 @@ async function request(path, options = {}) {
   return payload
 }
 
+async function registerUser(data) {
+  return request('/auth/register', {
+    method: 'POST',
+    data,
+  })
+}
+
 async function loginUser(email, password) {
   return request('/auth/login', {
     method: 'POST',
@@ -164,6 +171,7 @@ export {
   TOKEN_STORAGE_KEY,
   getAuthToken,
   request,
+  registerUser,
   loginUser,
   getCurrentUser,
   updateCurrentUser,
