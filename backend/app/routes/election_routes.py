@@ -112,13 +112,7 @@ def view_election_history(
     query = (
         db.query(Election)
         .options(joinedload(Election.candidates))
-        .filter(
-            Election.status.in_([
-                ElectionStatus.completed,
-                ElectionStatus.cancelled,
-                ElectionStatus.archived,
-            ])
-        )
+        .filter(Election.status != ElectionStatus.draft)
     )
 
     if current_user.role == UserRole.teacher:
@@ -133,7 +127,7 @@ def view_election_history(
     if search:
         query = query.filter(Election.title.ilike(f"%{search}%"))
 
-    return query.order_by(Election.end_date.desc()).all()
+    return query.order_by(Election.created_at.desc()).all()
 
 @router.get("/drafts", response_model=list[ElectionResponse])
 def view_draft_election_list(

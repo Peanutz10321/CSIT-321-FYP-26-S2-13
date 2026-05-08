@@ -108,6 +108,10 @@ async function getElectionDetails(electionId) {
   return request(`/elections/${electionId}`)
 }
 
+async function getElectionResults(electionId) {
+  return request(`/results/elections/${electionId}`)
+}
+
 async function updateElection(electionId, data) {
   return request(`/elections/${electionId}`, {
     method: 'PUT',
@@ -185,6 +189,7 @@ export {
   addEligibleVoter,
   addElectionVoter,
   getElectionDetails,
+  getElectionResults,
   updateElection,
   createElectionDraft,
   deleteElection,
