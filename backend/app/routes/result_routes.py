@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -44,11 +44,24 @@ def view_election_results(
             detail="Election not found",
         )
 
-    if election.status != ElectionStatus.completed:
+    # end_date is stored as naive SGT (UTC+8) from the frontend.
+    # Use current SGT time for comparison so there is no 8-hour offset error.
+    now = datetime.utcnow() + timedelta(hours=8)
+
+    is_completed = election.status == ElectionStatus.completed
+    is_ended = election.end_date is not None and election.end_date < now
+
+    if not is_completed and not is_ended:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Results are only available for completed elections",
+            detail="Results are not yet available. The election is still in progress.",
         )
+
+    # Auto-transition status so the rest of the system reflects reality
+    if is_ended and not is_completed:
+        election.status = ElectionStatus.completed
+        db.commit()
+        db.refresh(election)
 
     # Basic access rule:
     # - teacher who created the election can view

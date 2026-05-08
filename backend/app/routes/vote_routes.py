@@ -1,6 +1,6 @@
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -38,7 +38,8 @@ def create_vote(
             detail="Only active elections can be voted in",
         )
 
-    now = datetime.utcnow()
+    # start_date and end_date are stored as naive SGT (UTC+8).
+    now = datetime.utcnow() + timedelta(hours=8)
 
     if now < election.start_date or now > election.end_date:
         raise HTTPException(

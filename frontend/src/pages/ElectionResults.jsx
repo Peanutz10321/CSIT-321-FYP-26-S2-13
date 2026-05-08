@@ -20,7 +20,10 @@ function ElectionResults() {
 
     Promise.all([
       getElectionDetails(electionId),
-      getElectionResults(electionId).catch(() => null),
+      getElectionResults(electionId).catch((err) => {
+        console.error('[ElectionResults] getElectionResults failed:', err.message)
+        return { _error: err.message }
+      }),
     ])
       .then(([electionData, resultsData]) => {
         setElection(electionData)
@@ -56,6 +59,7 @@ function ElectionResults() {
     )
   }
 
+  const resultsError = results?._error ?? null
   const sortedResults = results?.results
     ? [...results.results].sort((a, b) => b.total_votes - a.total_votes)
     : []
@@ -87,15 +91,15 @@ function ElectionResults() {
 
             <div>
               <p className="font-semibold text-slate-100">Total Votes Cast</p>
-              <p className="mt-1">{totalVotes}</p>
+              <p className="mt-1">{resultsError ? '—' : totalVotes}</p>
             </div>
 
             <div>
               <p className="font-semibold text-slate-100">Results by Candidate</p>
 
-              {results === null ? (
+              {resultsError ? (
                 <div className="mt-3 rounded-2xl border border-amber-800 bg-amber-950 px-4 py-3 text-amber-300">
-                  Results are not yet available. This election may still be in progress.
+                  {resultsError}
                 </div>
               ) : sortedResults.length === 0 ? (
                 <p className="mt-3 text-slate-400">No votes have been cast.</p>
