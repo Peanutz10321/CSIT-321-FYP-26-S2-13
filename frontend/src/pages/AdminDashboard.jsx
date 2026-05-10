@@ -1,10 +1,23 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getCurrentUser } from '../utils/api.js'
+import { getCurrentUser, getAdminStats } from '../utils/api.js'
+
+function StatCard({ label, value, loading }) {
+  return (
+    <div className="rounded-2xl bg-slate-700 p-4 text-sm text-slate-300">
+      <p className="font-semibold text-slate-100">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-slate-100">
+        {loading ? <span className="text-base font-normal text-slate-400">Loading…</span> : value}
+      </p>
+    </div>
+  )
+}
 
 function AdminDashboard() {
   const navigate = useNavigate()
   const [user, setUser] = useState(null)
+  const [stats, setStats] = useState(null)
+  const [statsLoading, setStatsLoading] = useState(true)
 
   useEffect(() => {
     const token = localStorage.getItem('authToken')
@@ -16,6 +29,11 @@ function AdminDashboard() {
     getCurrentUser()
       .then(setUser)
       .catch(() => navigate('/login'))
+
+    getAdminStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false))
   }, [navigate])
 
   return (
@@ -43,22 +61,23 @@ function AdminDashboard() {
             <p className="mt-3 text-sm text-slate-400">View and edit user accounts</p>
           </button>
 
-          <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm transition hover:border-sky-500 hover:shadow-md">
+          <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm xl:col-span-2">
             <div className="text-sm font-semibold text-slate-100">System Overview</div>
-            <div className="mt-5 grid gap-4">
-              <div className="rounded-2xl bg-slate-700 p-4 text-sm text-slate-300">
-                <p className="font-semibold text-slate-100">Total Students</p>
-                <p className="mt-1 text-2xl">150</p>
-              </div>
-              <div className="rounded-2xl bg-slate-700 p-4 text-sm text-slate-300">
-                <p className="font-semibold text-slate-100">Active Elections</p>
-                <p className="mt-1 text-2xl">2</p>
-              </div>
-              <div className="rounded-2xl bg-slate-700 p-4 text-sm text-slate-300">
-                <p className="font-semibold text-slate-100">Recent Security Logs</p>
-                <p className="mt-1 text-slate-400">No anomalies detected</p>
-              </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <StatCard label="Total Students" value={stats?.total_students ?? '—'} loading={statsLoading} />
+              <StatCard label="Total Teachers" value={stats?.total_teachers ?? '—'} loading={statsLoading} />
+              <StatCard label="Total Admins" value={stats?.total_admins ?? '—'} loading={statsLoading} />
+              <StatCard label="Active Elections" value={stats?.active_elections ?? '—'} loading={statsLoading} />
+              <StatCard label="Votes Cast" value={stats?.total_votes_cast ?? '—'} loading={statsLoading} />
+              <StatCard
+                label="Participation Rate"
+                value={stats ? `${stats.participation_rate}%` : '—'}
+                loading={statsLoading}
+              />
             </div>
+            {!statsLoading && stats === null && (
+              <p className="mt-4 text-xs text-red-400">Could not load stats. Check your connection.</p>
+            )}
           </div>
         </main>
       </div>

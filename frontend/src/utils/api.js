@@ -153,6 +153,10 @@ async function deleteElection(electionId) {
   })
 }
 
+async function getAdminStats() {
+  return request('/admin/stats')
+}
+
 async function updateUserStatus(userId, status) {
   return request(`/admin/users/${userId}/status`, {
     method: 'PATCH',
@@ -202,6 +206,7 @@ export {
   deleteElection,
   activateElection,
   submitVote,
+  getAdminStats,
   updateUserStatus,
   decodeJwt,
 }
