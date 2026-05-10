@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
-from app.schemas.user_schema import UserResponse
+from app.schemas.user_schema import UserResponse, UserStatusUpdateRequest
 from app.security.security import require_system_admin
 
 
@@ -76,6 +76,44 @@ def view_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    return user
+
+
+@router.patch("/{user_id}/status", response_model=UserResponse)
+def set_user_status(
+    user_id: UUID,
+    body: UserStatusUpdateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_system_admin),
+):
+    """
+    System admin can set a user's status to active, inactive, or suspended.
+    """
+
+    if body.status not in [item.value for item in UserStatus]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {[s.value for s in UserStatus]}",
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own status",
+        )
+
+    user.status = UserStatus(body.status)
+    db.commit()
+    db.refresh(user)
 
     return user
 

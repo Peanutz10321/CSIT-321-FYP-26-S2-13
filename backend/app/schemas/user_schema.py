@@ -24,3 +24,7 @@ class UserUpdateRequest(BaseModel):
     full_name: str | None = None
     email: EmailStr | None = None
     password: str | None = None
+
+
+class UserStatusUpdateRequest(BaseModel):
+    status: str

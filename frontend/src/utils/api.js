@@ -153,6 +153,13 @@ async function deleteElection(electionId) {
   })
 }
 
+async function updateUserStatus(userId, status) {
+  return request(`/admin/users/${userId}/status`, {
+    method: 'PATCH',
+    data: { status },
+  })
+}
+
 function decodeJwt(token) {
   if (!token) return null
   const parts = token.split('.')
@@ -195,5 +202,6 @@ export {
   deleteElection,
   activateElection,
   submitVote,
+  updateUserStatus,
   decodeJwt,
 }
