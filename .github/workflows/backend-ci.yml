@@ -40,4 +40,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: test
+          JWT_ALGORITHM: HS256
+          TESTING: "true"
         run: pytest tests -v
