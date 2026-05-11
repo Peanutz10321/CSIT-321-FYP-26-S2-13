@@ -111,7 +111,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     if user.status == UserStatus.suspended:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account has been suspended",
+            detail="Please provide a valid email and password",
         )
 
     access_token = create_access_token(
