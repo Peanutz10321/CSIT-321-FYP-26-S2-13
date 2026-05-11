@@ -125,6 +125,13 @@ async function activateElection(electionId) {
   })
 }
 
+async function extendElectionDeadline(electionId, newEndDate) {
+  return request(`/elections/${electionId}/extend-deadline`, {
+    method: 'PATCH',
+    data: { new_end_date: newEndDate },
+  })
+}
+
 async function submitVote(data) {
   return request('/votes', {
     method: 'POST',
@@ -205,6 +212,7 @@ export {
   createElectionDraft,
   deleteElection,
   activateElection,
+  extendElectionDeadline,
   submitVote,
   getAdminStats,
   updateUserStatus,

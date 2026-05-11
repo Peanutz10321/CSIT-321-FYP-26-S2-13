@@ -23,8 +23,7 @@ function StudentDashboard() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 rounded-3xl bg-slate-800 p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-sky-400">Student Dashboard</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.full_name || 'Student'}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Student'}</h1>
           </div>
           <button
             onClick={() => navigate('/login')}
@@ -34,7 +33,7 @@ function StudentDashboard() {
           </button>
         </header>
 
-        <main className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <main className="mt-10 grid gap-6 grid-cols-2">
           {[
             'View User Account',
             'My Active Elections',

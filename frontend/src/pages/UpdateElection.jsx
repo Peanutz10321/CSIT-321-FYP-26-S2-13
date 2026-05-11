@@ -1,268 +1,128 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getElectionDetails, getEligibleVoters, addElectionVoter, updateElection } from '../utils/api'
+import { getElectionDetails, updateElection, extendElectionDeadline } from '../utils/api'
 
 function UpdateElection() {
   const navigate = useNavigate()
   const { electionId } = useParams()
 
   const [election, setElection] = useState(null)
-  const [eligibleVoters, setEligibleVoters] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [newInstitutionId, setNewInstitutionId] = useState('')
-  const [addingVoter, setAddingVoter] = useState(false)
   const [title, setTitle] = useState('')
-  const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [candidatesText, setCandidatesText] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const fetchElectionData = async () => {
-      try {
-        setLoading(true)
-        const [electionData, votersData] = await Promise.all([
-          getElectionDetails(electionId),
-          getEligibleVoters(electionId),
-        ])
-        setElection(electionData)
-        setEligibleVoters(votersData)
-        setTitle(electionData.title || '')
-        setStartDate(electionData.start_date ? new Date(electionData.start_date).toISOString().slice(0, 16) : '')
-        setEndDate(electionData.end_date ? new Date(electionData.end_date).toISOString().slice(0, 16) : '')
-        setCandidatesText(
-          electionData.candidates?.map((candidate) => candidate.name).join('\n') || ''
-        )
-      } catch (error) {
-        alert(`Failed to load election details: ${error.message}`)
-        navigate('/election-drafts')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (electionId) {
-      fetchElectionData()
-    }
+    getElectionDetails(electionId)
+      .then((data) => {
+        setElection(data)
+        setTitle(data.title || '')
+        setEndDate(data.end_date ? new Date(data.end_date).toISOString().slice(0, 16) : '')
+      })
+      .catch((err) => {
+        alert(`Failed to load election: ${err.message}`)
+        navigate(-1)
+      })
+      .finally(() => setLoading(false))
   }, [electionId, navigate])
 
-  const handleAddVoter = async () => {
-    const institutionId = newInstitutionId.trim()
-    if (!institutionId) {
-      alert('Please enter an institution ID.')
-      return
-    }
-
-    setAddingVoter(true)
-    try {
-      await addElectionVoter(electionId, institutionId)
-      alert('Voter added successfully!')
-      setNewInstitutionId('')
-      const votersData = await getEligibleVoters(electionId)
-      setEligibleVoters(votersData)
-    } catch (error) {
-      alert(`Failed to add voter: ${error.message}`)
-    } finally {
-      setAddingVoter(false)
-    }
-  }
+  const normalizeDateTime = (dt) => (dt && dt.length === 16 ? `${dt}:00` : dt)
 
   const handleSave = async () => {
-    const trimmedTitle = title.trim()
-    const trimmedStart = startDate.trim()
-    const trimmedEnd = endDate.trim()
+    if (!title.trim()) { alert('Please enter a title.'); return }
+    if (!endDate) { alert('Please enter a deadline.'); return }
 
-    if (!trimmedTitle) {
-      alert('Please enter election title.')
-      return
-    }
-
-    if (!trimmedStart || !trimmedEnd) {
-      alert('Please enter both start and end date/time.')
-      return
-    }
-
-    const candidateNames = candidatesText
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-
-    if (candidateNames.length === 0) {
-      alert('Please enter at least one candidate.')
-      return
-    }
-
-    const payload = {
-      title: trimmedTitle,
-      description: election.description ?? null,
-      start_date: trimmedStart,
-      end_date: trimmedEnd,
-      candidates: candidateNames.map((name, index) => ({
-        name,
-        description: null,
-        photo_url: null,
-        display_order: index + 1,
-      })),
-    }
-
-    setIsSaving(true)
+    setSaving(true)
     try {
-      await updateElection(electionId, payload)
+      if (election.status === 'active') {
+        await extendElectionDeadline(electionId, normalizeDateTime(endDate))
+      } else {
+        await updateElection(electionId, {
+          title: title.trim(),
+          description: election.description ?? null,
+          start_date: election.start_date,
+          end_date: normalizeDateTime(endDate),
+          candidates: election.candidates?.map((c, i) => ({
+            name: c.name,
+            description: c.description ?? null,
+            photo_url: c.photo_url ?? null,
+            display_order: c.display_order ?? i + 1,
+          })),
+        })
+      }
       alert('Election updated successfully!')
-      navigate('/election-drafts')
+      navigate(-1)
     } catch (error) {
       alert(`Failed to update election: ${error.message}`)
     } finally {
-      setIsSaving(false)
+      setSaving(false)
     }
-  }
-
-  const handleCancel = () => {
-    navigate('/election-drafts')
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-4xl">
-          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm text-center">
-            <p className="text-slate-400">Loading election details...</p>
-          </div>
-        </div>
+        <div className="mx-auto max-w-xl text-slate-300">Loading...</div>
       </div>
     )
   }
 
-  if (!election) {
-    return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-4xl">
-          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm text-center">
-            <p className="text-slate-400">Election not found</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const isActive = election?.status === 'active'
+  const inputClass =
+    'flex-1 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
+  const labelClass = 'w-32 shrink-0 font-semibold text-slate-100'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Update Election Details</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Update Election Details</h1>
-          <div className="mt-8 space-y-6">
-            <div>
-              <label htmlFor="title" className="block text-sm font-medium text-slate-300">
-                Election Title
-              </label>
+      <div className="mx-auto max-w-xl space-y-6">
+
+        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
+          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Update Election Details</h2>
+
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <span className={labelClass}>Title:</span>
               <input
-                id="title"
                 type="text"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Enter election title"
-                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={isActive}
+                placeholder="Election title"
+                className={`${inputClass} ${isActive ? 'cursor-not-allowed opacity-50' : ''}`}
               />
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="start" className="block text-sm font-medium text-slate-300">
-                  Start Date &amp; Time
-                </label>
-                <input
-                  id="start"
-                  type="datetime-local"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
-                />
-              </div>
-              <div>
-                <label htmlFor="end" className="block text-sm font-medium text-slate-300">
-                  End Date &amp; Time
-                </label>
-                <input
-                  id="end"
-                  type="datetime-local"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
-                />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="candidates" className="block text-sm font-medium text-slate-300">
-                Candidates
-              </label>
-              <textarea
-                id="candidates"
-                rows="5"
-                value={candidatesText}
-                onChange={(event) => setCandidatesText(event.target.value)}
-                placeholder="Enter candidate names, separated by commas or new lines"
-                className="mt-2 block w-full rounded-3xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
-              />
-            </div>
-            <div>
-              <label htmlFor="eligible-voters" className="block text-sm font-medium text-slate-300">
-                Eligible Voters
-              </label>
-              <div className="mt-2 flex gap-3">
-                <input
-                  id="new-voter"
-                  type="text"
-                  value={newInstitutionId}
-                  onChange={(e) => setNewInstitutionId(e.target.value)}
-                  placeholder="Enter institution ID"
-                  className="flex-1 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-800"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddVoter}
-                  disabled={addingVoter}
-                  className="inline-flex items-center rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {addingVoter ? 'Adding...' : 'Add Voter'}
-                </button>
-              </div>
 
-              {eligibleVoters.length > 0 && (
-                <div className="mt-4 rounded-3xl border border-slate-700 bg-slate-700 p-4">
-                  <p className="text-sm font-medium text-slate-300">Eligible Voters ({eligibleVoters.length})</p>
-                  <ul className="mt-3 space-y-2">
-                    {eligibleVoters.map((voter) => (
-                      <li key={voter.id} className="flex items-center justify-between rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3">
-                        <div>
-                          <span className="text-sm font-medium text-slate-100">{voter.student_full_name}</span>
-                          <span className="ml-2 text-sm text-slate-400">({voter.student_institution_id})</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            <div className="flex items-center gap-4">
+              <span className={labelClass}>Deadline:</span>
+              <input
+                type="datetime-local"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className={inputClass}
+              />
             </div>
+          </div>
+
+          <div className="mt-10 flex justify-center">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="w-full rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-          >
-            Cancel
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
+        >
+          Back
+        </button>
+
       </div>
     </div>
   )

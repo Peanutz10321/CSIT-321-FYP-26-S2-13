@@ -39,15 +39,14 @@ function Login() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl shadow-sm p-8">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-semibold text-slate-100">Welcome Back</h1>
-          <p className="mt-2 text-sm text-slate-400">Login to access the e-voting system</p>
+      <div className="w-full max-w-2xl rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg sm:px-14">
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-semibold tracking-wide text-slate-100">Login</h1>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-7">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-300">
+            <label htmlFor="email" className="mb-3 block text-xl font-medium text-slate-100">
               Email
             </label>
             <input
@@ -56,14 +55,13 @@ function Login() {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="Enter your email"
-              className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
+              className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+            <label htmlFor="password" className="mb-3 block text-xl font-medium text-slate-100">
               Password
             </label>
             <input
@@ -72,26 +70,27 @@ function Login() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter your password"
-              className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
+              className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
               required
             />
           </div>
 
-          <button
-            type="submit"
-            className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-white font-semibold shadow-sm transition hover:bg-blue-700"
-          >
-            Login
-          </button>
-        </form>
+          <div className="flex items-center justify-between gap-4 pt-8">
+            <button
+              type="submit"
+              className="min-w-36 border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
+            >
+              Login
+            </button>
 
-        <p className="mt-6 text-center text-sm text-slate-400">
-          Don&apos;t have an account?{' '}
-          <Link to="/register" className="font-medium text-blue-400 hover:text-blue-300">
-            Register
-          </Link>
-        </p>
+            <Link
+              to="/register"
+              className="min-w-36 border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-center text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
+            >
+              Register
+            </Link>
+          </div>
+        </form>
       </div>
     </div>
   )

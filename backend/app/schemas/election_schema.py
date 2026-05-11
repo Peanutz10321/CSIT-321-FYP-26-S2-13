@@ -32,6 +32,7 @@ class ElectionCreate(BaseModel):
 class ElectionResponse(BaseModel):
     id: UUID
     teacher_id: UUID
+    teacher_username: str | None = None
     title: str
     description: str | None = None
     status: str

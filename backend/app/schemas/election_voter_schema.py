@@ -25,7 +25,7 @@ class ElectionVoterDetailResponse(BaseModel):
     election_id: UUID
     student_id: UUID
     student_institution_id: str
-    student_full_name: str
+    student_username: str
     student_email: str
     eligibility_status: str
     voted_at: datetime | None = None

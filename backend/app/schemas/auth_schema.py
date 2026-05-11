@@ -3,9 +3,7 @@ from typing import Optional
 
 
 class RegisterRequest(BaseModel):
-    institution_id: str
     username: str
-    full_name: str
     email: EmailStr
     password: str
     role: str  # "student" or "teacher"

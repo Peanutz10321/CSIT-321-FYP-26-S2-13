@@ -30,7 +30,7 @@ def update_own_account(
 ):
     """
     Update own user account.
-    User can update username, full name, email, and password.
+    User can update username, email, and password.
     """
 
     if request.username and request.username != current_user.username:
@@ -64,9 +64,6 @@ def update_own_account(
             )
 
         current_user.email = request.email
-
-    if request.full_name:
-        current_user.full_name = request.full_name
 
     if request.password:
         current_user.password_hash = hash_password(request.password)

@@ -12,7 +12,7 @@ class UserResponse(BaseModel):
     status: str
     institution_id: str
     username: str
-    full_name: str
+    full_name: str | None = None
     email: EmailStr
     created_at: datetime
     updated_at: datetime
@@ -21,7 +21,6 @@ class UserResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     username: str | None = None
-    full_name: str | None = None
     email: EmailStr | None = None
     password: str | None = None
 

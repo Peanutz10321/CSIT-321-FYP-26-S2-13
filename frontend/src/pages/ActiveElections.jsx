@@ -5,103 +5,96 @@ import { getActiveElections, getCurrentUser } from '../utils/api.js'
 function ActiveElections() {
   const navigate = useNavigate()
   const [activeElections, setActiveElections] = useState([])
-  const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [role, setRole] = useState('')
 
   useEffect(() => {
-    getCurrentUser()
-      .then(setCurrentUser)
-      .catch(() => {
-        navigate('/login')
+    Promise.all([getActiveElections(), getCurrentUser()])
+      .then(([elections, user]) => {
+        setActiveElections(elections)
+        setRole(user.role || '')
       })
-
-    getActiveElections()
-      .then((data) => setActiveElections(data))
-      .catch(() => {
-        navigate('/login')
-      })
+      .catch(() => navigate('/login'))
       .finally(() => setLoading(false))
   }, [navigate])
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-5xl text-slate-300">Loading data...</div>
-      </div>
-    )
+  const handleSearch = (e) => {
+    e.preventDefault()
+    setSearchQuery(searchInput)
   }
 
-  const noData = activeElections.length === 0
+  const filteredElections = activeElections.filter((election) => {
+    const q = searchQuery.toLowerCase()
+    if (!q) return true
+    return election.title.toLowerCase().includes(q)
+  })
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-sky-400">My Active Elections</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Active Elections</h1>
-          <div className="mt-6 max-w-md">
-            <label htmlFor="search" className="sr-only">Search</label>
+      <div className="mx-auto max-w-5xl space-y-8">
+        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
+          <h1 className="text-3xl font-semibold text-slate-100">My Active Elections</h1>
+
+          <form onSubmit={handleSearch} className="mt-6 space-y-3">
+            <p className="text-sm font-medium text-slate-300">Search</p>
             <input
-              id="search"
-              type="search"
-              placeholder="Search elections"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search elections..."
               className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
             />
-          </div>
+            <button
+              type="submit"
+              className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              Search
+            </button>
+          </form>
         </div>
 
-        <div className="space-y-4">
-          {(() => {
-            const filteredElections = activeElections.filter((election) =>
-              election.title.toLowerCase().includes(searchTerm.toLowerCase())
-            )
-            return noData && searchTerm === '' ? (
-              <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-center text-slate-400">
-                No data available at the moment.
-              </div>
+        <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm">
+          <div className="grid grid-cols-3 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
+            <span>Election Title</span>
+            <span>Complete Date</span>
+            <span className="text-right">View</span>
+          </div>
+          <div className="divide-y divide-slate-700">
+            {loading ? (
+              <div className="px-6 py-8 text-center text-sm text-slate-400">Loading elections...</div>
             ) : filteredElections.length === 0 ? (
-              <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-center text-slate-400">
-                No elections match your search.
-              </div>
+              <div className="px-6 py-8 text-center text-sm text-slate-400">No elections found.</div>
             ) : (
               filteredElections.map((election) => (
-                <div key={election.id} className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-100">{election.title}</p>
-                      <p className="mt-2 text-sm text-slate-400">
-                        <span className="font-medium text-slate-300">Start Time:</span>{' '}
-                        {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-400">
-                        <span className="font-medium text-slate-300">End Time:</span>{' '}
-                        {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
-                      </p>
-                    </div>
+                <div key={election.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
+                  <span className="font-medium text-slate-100">{election.title}</span>
+                  <span>
+                    {election.end_date
+                      ? new Date(election.end_date).toLocaleDateString()
+                      : '—'}
+                  </span>
+                  <div className="flex justify-end">
                     <button
-                      onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
-                      className="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      onClick={() => navigate('/election-detail', { state: { electionId: election.id, from: 'active', role } })}
+                      className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
                     >
-                      {currentUser?.role === 'student' ? 'Vote' : 'View Details'}
+                      View
                     </button>
                   </div>
                 </div>
               ))
-            )
-          })()}
+            )}
+          </div>
         </div>
 
-        <div className="mt-8 flex justify-end">
-          <button
-            onClick={() => navigate('/student-dashboard')}
-            className="inline-flex items-center gap-2 rounded-2xl bg-slate-800 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="rounded-2xl bg-slate-800 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 border border-slate-600"
+        >
+          Back to Dashboard
+        </button>
       </div>
     </div>
   )

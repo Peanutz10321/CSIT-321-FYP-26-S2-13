@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { getElectionDetails, getElectionResults } from '../utils/api.js'
+import { getElectionDetails, getElectionResults, getEligibleVoters } from '../utils/api.js'
 
 function ElectionResults() {
   const navigate = useNavigate()
@@ -9,6 +9,7 @@ function ElectionResults() {
 
   const [election, setElection] = useState(null)
   const [results, setResults] = useState(null)
+  const [eligibleCount, setEligibleCount] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -20,14 +21,13 @@ function ElectionResults() {
 
     Promise.all([
       getElectionDetails(electionId),
-      getElectionResults(electionId).catch((err) => {
-        console.error('[ElectionResults] getElectionResults failed:', err.message)
-        return { _error: err.message }
-      }),
+      getElectionResults(electionId).catch((err) => ({ _error: err.message })),
+      getEligibleVoters(electionId).catch(() => null),
     ])
-      .then(([electionData, resultsData]) => {
+      .then(([electionData, resultsData, votersData]) => {
         setElection(electionData)
         setResults(resultsData)
+        setEligibleCount(votersData ? votersData.length : null)
       })
       .catch((err) => setError(err.message || 'Failed to load election data.'))
       .finally(() => setLoading(false))
@@ -36,7 +36,7 @@ function ElectionResults() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-4xl text-slate-300">Loading results...</div>
+        <div className="mx-auto max-w-2xl text-slate-300">Loading results...</div>
       </div>
     )
   }
@@ -44,15 +44,15 @@ function ElectionResults() {
   if (error || !election) {
     return (
       <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-4xl space-y-4">
-          <div className="rounded-3xl border border-rose-800 bg-rose-950 p-6 text-center text-rose-400">
+        <div className="mx-auto max-w-2xl space-y-4">
+          <div className="rounded-sm border-2 border-rose-800 bg-rose-950 p-6 text-center text-rose-400">
             {error ?? 'Election not found.'}
           </div>
           <button
-            onClick={() => navigate('/election-history')}
-            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
+            onClick={() => navigate(-1)}
+            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
           >
-            Back to History
+            Back
           </button>
         </div>
       </div>
@@ -64,89 +64,63 @@ function ElectionResults() {
     ? [...results.results].sort((a, b) => b.total_votes - a.total_votes)
     : []
   const totalVotes = sortedResults.reduce((sum, r) => sum + r.total_votes, 0)
-  const winnerId = sortedResults[0]?.candidate_id
+  const winner = sortedResults[0]?.candidate_name ?? '—'
+  const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
+
+  const Row = ({ label, children }) => (
+    <div className="border-b border-slate-700 py-4">
+      <span className="font-semibold text-slate-100">{label}: </span>
+      <span className="text-slate-300">{children}</span>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Election Results</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-100">{election.title}</h1>
+      <div className="mx-auto max-w-2xl space-y-6">
 
-          <div className="mt-8 space-y-6 text-sm text-slate-300">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="font-semibold text-slate-100">Start Date &amp; Time</p>
-                <p className="mt-1">
-                  {election.start_date ? new Date(election.start_date).toLocaleString() : 'TBD'}
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-100">End Date &amp; Time</p>
-                <p className="mt-1">
-                  {election.end_date ? new Date(election.end_date).toLocaleString() : 'TBD'}
-                </p>
-              </div>
-            </div>
+        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
+          <h2 className="mb-6 text-center text-xl font-semibold text-slate-100">Election Results</h2>
 
-            <div>
-              <p className="font-semibold text-slate-100">Total Votes Cast</p>
-              <p className="mt-1">{resultsError ? '—' : totalVotes}</p>
-            </div>
-
-            <div>
-              <p className="font-semibold text-slate-100">Results by Candidate</p>
-
+          <div className="text-sm">
+            <Row label="Title">{election.title}</Row>
+            <Row label="Candidates">{candidateNames}</Row>
+            <Row label="Commence Date And Time">
+              {election.start_date ? new Date(election.start_date).toLocaleString() : '—'}
+            </Row>
+            <Row label="End Date And Time">
+              {election.end_date ? new Date(election.end_date).toLocaleString() : '—'}
+            </Row>
+            <Row label="Total Votes Cast">
+              {resultsError ? '—' : totalVotes}
+            </Row>
+            <Row label="Eligible Student Voters">
+              {eligibleCount !== null ? eligibleCount : '—'}
+            </Row>
+            <Row label="Number Of Votes Per Candidate">
               {resultsError ? (
-                <div className="mt-3 rounded-2xl border border-amber-800 bg-amber-950 px-4 py-3 text-amber-300">
-                  {resultsError}
-                </div>
+                <span className="text-amber-400">{resultsError}</span>
               ) : sortedResults.length === 0 ? (
-                <p className="mt-3 text-slate-400">No votes have been cast.</p>
+                'No votes cast'
               ) : (
-                <ul className="mt-3 space-y-4">
-                  {sortedResults.map((r) => {
-                    const pct = totalVotes > 0 ? Math.round((r.total_votes / totalVotes) * 100) : 0
-                    const isWinner = r.candidate_id === winnerId && totalVotes > 0
-
-                    return (
-                      <li key={r.candidate_id} className="rounded-2xl bg-slate-700 p-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <span className="font-medium text-slate-100">{r.candidate_name}</span>
-                            {isWinner && (
-                              <span className="ml-2 rounded-full bg-emerald-900 px-2 py-0.5 text-xs font-semibold text-emerald-300">
-                                Winner
-                              </span>
-                            )}
-                          </div>
-                          <span className="shrink-0 text-slate-300">
-                            {r.total_votes} vote{r.total_votes !== 1 ? 's' : ''} ({pct}%)
-                          </span>
-                        </div>
-                        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-600">
-                          <div
-                            className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                sortedResults.map((r) => `${r.candidate_name}: ${r.total_votes}`).join(', ')
               )}
+            </Row>
+            <div className="pt-4">
+              <span className="font-semibold text-slate-100">Winner: </span>
+              <span className="text-slate-300">
+                {resultsError || totalVotes === 0 ? '—' : winner}
+              </span>
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl bg-slate-800 p-6 shadow-sm">
-          <button
-            onClick={() => navigate('/election-history')}
-            className="w-full rounded-2xl bg-blue-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-blue-700"
-          >
-            Back to History
-          </button>
-        </div>
+        <button
+          onClick={() => navigate(-1)}
+          className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
+        >
+          Back
+        </button>
+
       </div>
     </div>
   )

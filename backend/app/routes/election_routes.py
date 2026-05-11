@@ -155,7 +155,7 @@ def view_election_details(
 ):
     election = (
         db.query(Election)
-        .options(joinedload(Election.candidates))
+        .options(joinedload(Election.candidates), joinedload(Election.teacher))
         .filter(Election.id == election_id)
         .first()
     )
@@ -468,7 +468,7 @@ def view_eligible_voters(
         db.query(ElectionVoter, User)
         .join(User, ElectionVoter.student_id == User.id)
         .filter(ElectionVoter.election_id == election.id)
-        .order_by(User.full_name.asc())
+        .order_by(User.username.asc())
         .all()
     )
 
@@ -478,7 +478,7 @@ def view_eligible_voters(
             election_id=voter.election_id,
             student_id=voter.student_id,
             student_institution_id=student.institution_id,
-            student_full_name=student.full_name,
+            student_username=student.username,
             student_email=student.email,
             eligibility_status=voter.eligibility_status.value,
             voted_at=voter.voted_at,

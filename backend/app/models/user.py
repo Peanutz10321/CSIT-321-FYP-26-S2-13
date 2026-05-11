@@ -30,7 +30,7 @@ class User(Base):
 
     institution_id = Column(String, nullable=False, unique=True)
     username = Column(String, nullable=False, unique=True)
-    full_name = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=False)
 

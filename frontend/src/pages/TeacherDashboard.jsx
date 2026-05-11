@@ -23,8 +23,7 @@ function TeacherDashboard() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 rounded-3xl bg-slate-800 p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Teacher Dashboard</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.full_name || 'Teacher'}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Teacher'}</h1>
           </div>
           <button
             onClick={() => navigate('/login')}
@@ -34,31 +33,20 @@ function TeacherDashboard() {
           </button>
         </header>
 
-        <main className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <main className="mt-10 grid grid-cols-2 gap-6">
           {[
-            'View Account',
-            'Manage Elections',
-            'Create Election',
-            'Election History',
-          ].map((label) => (
+            { label: 'View User Account', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/view-account', { state: { from: '/teacher-dashboard' } }) } },
+            { label: 'New Elections', action: () => navigate('/create-election') },
+            { label: 'My Active Elections', action: () => navigate('/active-elections') },
+            { label: 'My Election History', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/election-history', { state: { from: '/teacher-dashboard' } }) } },
+          ].map(({ label, action }) => (
             <button
               key={label}
-              onClick={() => {
-                if (label === 'View Account') {
-                  localStorage.setItem('backTo', '/teacher-dashboard')
-                  return navigate('/view-account', { state: { from: '/teacher-dashboard' } })
-                }
-                if (label === 'Manage Elections') return navigate('/election-drafts')
-                if (label === 'Create Election') return navigate('/create-election')
-                if (label === 'Election History') {
-                  localStorage.setItem('backTo', '/teacher-dashboard')
-                  return navigate('/election-history', { state: { from: '/teacher-dashboard' } })
-                }
-              }}
-              className="group rounded-3xl border border-slate-700 bg-slate-800 p-6 text-left shadow-sm transition hover:border-sky-500 hover:shadow-md"
+              onClick={action}
+              className="group rounded-3xl border border-slate-700 bg-slate-800 p-6 text-left shadow-sm transition hover:border-amber-500 hover:shadow-md"
             >
               <div className="text-sm font-semibold text-slate-100">{label}</div>
-              <p className="mt-3 text-sm text-slate-400">Open the section</p>
+              <p className="mt-3 text-sm text-slate-400">Click to view details</p>
             </button>
           ))}
         </main>

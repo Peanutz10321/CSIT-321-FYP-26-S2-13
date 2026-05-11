@@ -1,3 +1,5 @@
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,18 @@ from app.schemas.user_schema import UserResponse
 from app.security.password import hash_password, verify_password
 from app.security.jwt import create_access_token
 from app.security.security import get_current_user
+
+_FIRST_NAMES = [
+    "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Jamie", "Quinn",
+    "Avery", "Peyton", "Reese", "Skyler", "Drew", "Blake", "Cameron", "Dana",
+]
+_LAST_NAMES = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+    "Wilson", "Anderson", "Thomas", "Jackson", "White", "Harris", "Martin", "Lee",
+]
+
+def _generate_full_name() -> str:
+    return f"{random.choice(_FIRST_NAMES)} {random.choice(_LAST_NAMES)}"
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -50,25 +64,19 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Username already exists",
         )
 
-    # Check duplicate institution_id
-    existing_institution_id = (
-        db.query(User)
-        .filter(User.institution_id == request.institution_id)
-        .first()
-    )
-    if existing_institution_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Institution ID already exists",
-        )
+    # Generate institution_id: STU-001 for students, TCH-001 for teachers
+    role_enum = UserRole(request.role)
+    prefix = "STU" if role_enum == UserRole.student else "TCH"
+    count = db.query(User).filter(User.role == role_enum).count()
+    institution_id = f"{prefix}-{count + 1:03d}"
 
     new_user = User(
-        institution_id=request.institution_id,
+        institution_id=institution_id,
         username=request.username,
-        full_name=request.full_name,
+        full_name=_generate_full_name(),
         email=request.email,
         password_hash=hash_password(request.password),
-        role=UserRole(request.role),
+        role=role_enum,
         status=UserStatus.active,
     )
 

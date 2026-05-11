@@ -21,12 +21,7 @@ function CastVote() {
     }
 
     getElectionDetails(electionId)
-      .then((data) => {
-        setElection(data)
-        if (data.candidates?.length) {
-          setSelectedCandidateId(data.candidates[0].id)
-        }
-      })
+      .then((data) => setElection(data))
       .catch((error) => {
         alert(`Unable to load election: ${error.message}`)
         navigate('/active-elections')
@@ -37,10 +32,7 @@ function CastVote() {
   useEffect(() => {
     getCurrentUser()
       .then(setCurrentUser)
-      .catch((error) => {
-        alert(`Unable to load user: ${error.message}`)
-        navigate('/login')
-      })
+      .catch(() => navigate('/login'))
       .finally(() => setUserLoading(false))
   }, [navigate])
 
@@ -51,7 +43,6 @@ function CastVote() {
     }
 
     setSubmitting(true)
-
     try {
       await submitVote({ election_id: electionId, candidate_id: selectedCandidateId })
       alert('Vote submitted successfully!')
@@ -66,66 +57,61 @@ function CastVote() {
   if (loading || userLoading) {
     return (
       <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-4xl text-slate-300">Loading election details...</div>
+        <div className="mx-auto max-w-xl text-slate-300">Loading...</div>
       </div>
     )
   }
 
-  if (!election || !currentUser) {
-    return null
-  }
+  if (!election || !currentUser) return null
 
   const isStudent = currentUser.role === 'student'
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Election Details</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-100">{election.title}</h1>
-          <p className="mt-2 text-sm text-slate-400">Election ID: {election.id}</p>
-        </div>
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-xl rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
+        <h1 className="mb-8 text-2xl font-semibold text-slate-100">Cast Your Vote</h1>
 
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-100">Choose a Candidate</h2>
-          <div className="mt-6 space-y-4">
+        <div className="space-y-6">
+          <p className="text-sm text-slate-300">
+            <span className="font-semibold text-slate-100">School ID: </span>
+            {currentUser.institution_id}
+          </p>
+
+          <div className="space-y-3">
             {election.candidates.map((candidate) => (
               <label
                 key={candidate.id}
-                className="flex cursor-pointer items-center justify-between rounded-3xl border border-slate-600 bg-slate-700 px-5 py-5 transition hover:border-blue-500"
+                className="flex cursor-pointer items-center justify-between border-b border-slate-600 pb-3"
               >
-                <div>
-                  <p className="text-base font-medium text-slate-100">{candidate.name}</p>
-                </div>
+                <span className="text-sm text-slate-100">{candidate.name}</span>
                 <input
-                  type="radio"
-                  name="candidate"
-                  value={candidate.id}
+                  type="checkbox"
                   checked={selectedCandidateId === candidate.id}
                   onChange={() => setSelectedCandidateId(candidate.id)}
                   disabled={!isStudent}
-                  className="h-5 w-5 text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-4 w-4 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </label>
             ))}
           </div>
+
           {!isStudent && (
-            <p className="mt-4 text-sm text-slate-400">Voting is restricted to Students.</p>
+            <p className="text-xs text-slate-400">Voting is restricted to students.</p>
+          )}
+
+          {isStudent && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={handleVote}
+                disabled={submitting || !selectedCandidateId}
+                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-base font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? 'Submitting...' : 'Submit Vote'}
+              </button>
+            </div>
           )}
         </div>
-
-        {isStudent && (
-          <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-            <button
-              type="button"
-              onClick={handleVote}
-              disabled={submitting}
-              className="w-full rounded-2xl bg-blue-600 px-5 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? 'Submitting Vote...' : 'Submit Vote'}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )

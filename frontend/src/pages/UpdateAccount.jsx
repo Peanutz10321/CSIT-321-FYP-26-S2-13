@@ -6,19 +6,19 @@ function UpdateAccount() {
   const navigate = useNavigate()
   const [formValues, setFormValues] = useState({
     username: '',
-    full_name: '',
     email: '',
     password: '',
   })
+  const [role, setRole] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     getCurrentUser()
       .then((user) => {
+        setRole(user.role || '')
         setFormValues({
           username: user.username || '',
-          full_name: user.full_name || '',
           email: user.email || '',
           password: '',
         })
@@ -42,7 +42,6 @@ function UpdateAccount() {
     try {
       const payload = {
         username: formValues.username,
-        full_name: formValues.full_name,
         email: formValues.email,
       }
 
@@ -64,7 +63,6 @@ function UpdateAccount() {
     <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Update Account</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-100">Update Account</h1>
           <div className="mt-8 space-y-6">
             <div>
@@ -82,22 +80,8 @@ function UpdateAccount() {
               />
             </div>
             <div>
-              <label htmlFor="full_name" className="block text-sm font-medium text-slate-300">
-                Full Name
-              </label>
-              <input
-                id="full_name"
-                name="full_name"
-                value={formValues.full_name}
-                onChange={handleInputChange}
-                type="text"
-                placeholder="Full Name"
-                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-              />
-            </div>
-            <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-300">
-                Email
+                {role === 'teacher' ? 'Teacher Email' : 'Student Email'}
               </label>
               <input
                 id="email"
