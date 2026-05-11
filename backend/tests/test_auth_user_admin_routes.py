@@ -99,6 +99,9 @@ class FakeQuery:
     def all(self):
         return self._filtered_users()
 
+    def count(self):
+        return len(self._filtered_users())
+
 
 class FakeSession:
     def __init__(self):

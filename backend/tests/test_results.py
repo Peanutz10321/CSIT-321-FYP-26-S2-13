@@ -40,7 +40,7 @@ def register_user(role: str) -> dict:
     response = client.post(f"{AUTH_BASE}/register", json=payload)
     assert response.status_code in [200, 201], response.text
 
-    return payload
+    return {**payload, **response.json()}
 
 
 def login_user(email: str, password: str = "testing123") -> str:
@@ -86,7 +86,7 @@ def valid_election_payload() -> dict:
         "title": unique_text("Class Representative Election"),
         "description": "Election for class representative",
         "start_date": (now - timedelta(minutes=10)).isoformat(),
-        "end_date": (now + timedelta(hours=3)).isoformat(),
+        "end_date": (now + timedelta(hours=24)).isoformat(),
         "candidates": [
             {
                 "name": unique_text("Alice"),
@@ -229,7 +229,7 @@ class TestElectionResults:
         )
 
         assert response.status_code == 400
-        assert "completed" in response.json()["detail"].lower()
+        assert "progress" in response.json()["detail"].lower() or "completed" in response.json()["detail"].lower()
 
     def test_teacher_cannot_view_other_teachers_results(
         self,

@@ -34,7 +34,7 @@ def register_user(role: str):
     response = client.post(f"{AUTH_BASE}/register", json=payload)
     assert response.status_code in [200, 201], response.text
 
-    return payload
+    return {**payload, **response.json()}
 
 
 def login_user(email: str, password: str = "testing123") -> str:

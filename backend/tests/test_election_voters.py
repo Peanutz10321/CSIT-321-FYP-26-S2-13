@@ -50,7 +50,7 @@ def register_user(role: str, status: str = "active") -> dict:
         finally:
             db.close()
 
-    return payload
+    return {**payload, **response.json()}
 
 
 def login_user(email: str, password: str = "testing123") -> str:
