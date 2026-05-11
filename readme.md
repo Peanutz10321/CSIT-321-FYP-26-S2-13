@@ -38,16 +38,59 @@ frontend/
 
 ## Prerequisites
 
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL
+Make sure you have the following installed before getting started:
 
-## Setup
+- [Python 3.10+](https://www.python.org/downloads/)
+- [Node.js 18+](https://nodejs.org/)
+- [PostgreSQL](https://www.postgresql.org/download/)
+- Git
 
-### Backend
+---
+
+## Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Peanutz10321/CSIT-321-FYP-26-S2-13
+cd CSIT-321-FYP-26-S2-13
+```
+
+---
+
+### 2. Set up the database
+
+Create a PostgreSQL database for the project:
+
+```sql
+CREATE DATABASE voting_system;
+```
+
+---
+
+### 3. Configure environment variables
+
+Create a `.env` file inside the `backend/` directory:
+
+```env
+DATABASE_URL=postgresql://your_pg_user:your_pg_password@localhost:5432/voting_system
+JWT_SECRET=your_secret_key
+```
+
+> Replace `your_pg_user`, `your_pg_password`, and `your_secret_key` with your actual values.
+
+---
+
+### 4. Run the backend and frontend
+
+You will need **two separate terminals** open at the same time — one for the backend and one for the frontend.
+
+#### Terminal 1 — Backend
 
 ```bash
 cd backend
+
+# Create and activate a virtual environment
 python -m venv venv
 
 # Windows
@@ -55,32 +98,36 @@ venv\Scripts\activate
 # macOS/Linux
 source venv/bin/activate
 
+# Install dependencies
 pip install -r requirements.txt
+
+# Start the backend server
 uvicorn app.main:app --reload
 ```
 
-API docs available at: http://127.0.0.1:8000/docs
+The backend will be running at: http://127.0.0.1:8000
 
-### Frontend
+Interactive API docs: http://127.0.0.1:8000/docs
+
+#### Terminal 2 — Frontend
 
 ```bash
 cd frontend
+
+# Install dependencies
 npm install
+
+# Start the frontend dev server
 npm run dev
 ```
 
-App available at: http://localhost:5173
+The app will be running at: http://localhost:5173
 
-## Environment Variables
-
-Create a `.env` file inside the `backend/` directory:
-
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/yourdbname
-JWT_SECRET=your_secret_key
-```
+---
 
 ## Running Tests
+
+With the virtual environment activated, run from the `backend/` directory:
 
 ```bash
 cd backend
