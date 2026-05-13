@@ -13,6 +13,7 @@ from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
 from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryResponse
 from app.security.security import require_student
+from app.security.homomorphic import deserialize_public_key, encrypt_vote
 
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
@@ -95,9 +96,21 @@ def create_vote(
             detail="You have already voted in this election",
         )
 
-    # Placeholder encryption for MVP flow.
-    # Later, replace this with homomorphic encryption.
-    encrypted_vote = f"encrypted_placeholder:{payload.candidate_id}"
+    if not election.public_key_n:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Election encryption keys are not initialized",
+        )
+
+    all_candidates = (
+        db.query(Candidate)
+        .filter(Candidate.election_id == payload.election_id)
+        .all()
+    )
+    candidate_ids = [str(c.id) for c in all_candidates]
+
+    public_key = deserialize_public_key(election.public_key_n)
+    encrypted_vote = encrypt_vote(public_key, candidate_ids, str(payload.candidate_id))
 
     vote_hash = hashlib.sha256(
         f"{payload.election_id}:{current_student.id}:{payload.candidate_id}:{now.isoformat()}".encode()

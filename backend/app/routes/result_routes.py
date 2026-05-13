@@ -12,22 +12,26 @@ from app.models.ballot import Ballot
 from app.models.candidate_result import CandidateResult
 from app.schemas.result_schema import ElectionResultResponse, CandidateResultResponse
 from app.security.security import get_current_user
+from app.security.homomorphic import (
+    deserialize_public_key,
+    deserialize_private_key,
+    homomorphic_tally,
+)
 
 
 router = APIRouter(prefix="/results", tags=["Results"])
 
 
-def _extract_candidate_id_from_placeholder(encrypted_vote: str) -> str | None:
-    """
-    Temporary MVP helper.
-    Current placeholder format: encrypted_placeholder:{candidate_id}
-    Later this should be replaced by homomorphic tally/decryption logic.
-    """
+def _legacy_tally(candidates, ballots) -> dict[str, int]:
+    """Fallback for elections created before homomorphic encryption was enabled."""
     prefix = "encrypted_placeholder:"
-    if not encrypted_vote.startswith(prefix):
-        return None
-
-    return encrypted_vote.replace(prefix, "", 1)
+    counts = {str(c.id): 0 for c in candidates}
+    for ballot in ballots:
+        if ballot.encrypted_vote.startswith(prefix):
+            cid = ballot.encrypted_vote.replace(prefix, "", 1)
+            if cid in counts:
+                counts[cid] += 1
+    return counts
 
 
 @router.get("/elections/{election_id}", response_model=ElectionResultResponse)
@@ -81,15 +85,15 @@ def view_election_results(
             detail="Election has no candidates",
         )
 
-    tally = {str(candidate.id): 0 for candidate in candidates}
-
     ballots = db.query(Ballot).filter(Ballot.election_id == election.id).all()
+    candidate_ids = [str(c.id) for c in candidates]
 
-    for ballot in ballots:
-        candidate_id = _extract_candidate_id_from_placeholder(ballot.encrypted_vote)
-
-        if candidate_id in tally:
-            tally[candidate_id] += 1
+    if election.public_key_n and election.private_key_json:
+        pk = deserialize_public_key(election.public_key_n)
+        sk = deserialize_private_key(election.private_key_json, pk)
+        tally = homomorphic_tally(pk, sk, [b.encrypted_vote for b in ballots], candidate_ids)
+    else:
+        tally = _legacy_tally(candidates, ballots)
 
     published_at = datetime.utcnow()
 
