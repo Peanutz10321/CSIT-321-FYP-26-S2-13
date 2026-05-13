@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { registerUser } from '../utils/api.js'
+import { registerUser, loginUser, decodeJwt } from '../utils/api.js'
 
 function Register() {
   const navigate = useNavigate()
@@ -37,8 +37,20 @@ function Register() {
       }
 
       await registerUser(payload)
-      alert('Account created successfully! Please login.')
-      navigate('/login')
+
+      const loginResponse = await loginUser(email.trim(), password)
+      const token = loginResponse.access_token
+      localStorage.setItem('authToken', token)
+      const decoded = decodeJwt(token)
+      const userRole = decoded?.role
+
+      if (userRole === 'student') {
+        navigate('/student-dashboard')
+      } else if (userRole === 'teacher') {
+        navigate('/teacher-dashboard')
+      } else {
+        navigate('/login')
+      }
     } catch (error) {
       alert(`Registration failed: ${error.message}`)
     } finally {

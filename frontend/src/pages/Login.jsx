@@ -87,7 +87,7 @@ function Login() {
               to="/register"
               className="min-w-36 border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-center text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
             >
-              Register
+              Sign up
             </Link>
           </div>
         </form>
