@@ -132,10 +132,18 @@ def add_student_to_election(teacher_token: str, election_id: str, student_user: 
     return response.json()
 
 
+def activate_election(teacher_token: str, election_id: str):
+    response = client.patch(
+        f"{ELECTION_BASE}/{election_id}/activate",
+        headers=auth_header(teacher_token),
+    )
+    assert response.status_code == 200, response.text
+
+
 def prepare_active_election_with_student(teacher_token, student_user):
     election = create_election_as_teacher(teacher_token)
     add_student_to_election(teacher_token, election["id"], student_user)
-    set_election_status(election["id"], ElectionStatus.active)
+    activate_election(teacher_token, election["id"])
     return election
 
 
@@ -158,7 +166,10 @@ class TestCreateVote:
         data = response.json()
         assert data["election_id"] == election["id"]
         assert data["receipt_code"] is not None
-        assert data["encrypted_vote"].startswith("encrypted_placeholder")
+        # encrypted_vote is a Paillier ciphertext stored as JSON
+        import json
+        parsed = json.loads(data["encrypted_vote"])
+        assert set(parsed.keys()) == {c["id"] for c in election["candidates"]}
 
     def test_student_cannot_vote_twice(self, teacher_token, student_user, student_token):
         election = prepare_active_election_with_student(teacher_token, student_user)

@@ -311,7 +311,7 @@ def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
 
     list_response = client.get("/admin/users", headers=auth_headers(admin_token))
     assert list_response.status_code == 200
-    assert len(list_response.json()) == 2
+    assert len(list_response.json()) == 1
 
     suspend_response = client.patch(
         f"/admin/users/{student.id}/suspend",

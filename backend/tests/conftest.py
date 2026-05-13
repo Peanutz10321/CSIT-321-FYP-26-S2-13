@@ -24,6 +24,17 @@ def pytest_configure(config):
     if not database_url:
         raise RuntimeError("DATABASE_URL is missing from .env.test")
 
+    import app.models.user  
+    import app.models.election  
+    import app.models.candidate  
+    import app.models.election_voter  
+    import app.models.ballot  
+    import app.models.candidate_result  
+    import app.models.audit_log  
+
+    from app.database import Base, engine
+    Base.metadata.create_all(bind=engine)
+
 
 @pytest.fixture(autouse=True)
 def clean_test_records():
