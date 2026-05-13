@@ -73,8 +73,23 @@ async function updateCurrentUser(data) {
   })
 }
 
-async function getAdminUsers() {
-  return request('/admin/users')
+async function getAdminUsers(filters = {}) {
+  const params = new URLSearchParams()
+
+  if (filters.search?.trim()) {
+    params.set('search', filters.search.trim())
+  }
+
+  if (filters.role?.trim()) {
+    params.set('role', filters.role.trim())
+  }
+
+  if (filters.status?.trim()) {
+    params.set('status', filters.status.trim())
+  }
+
+  const query = params.toString()
+  return request(`/admin/users${query ? `?${query}` : ''}`)
 }
 
 async function getActiveElections() {
@@ -164,6 +179,10 @@ async function getAdminStats() {
   return request('/admin/stats')
 }
 
+async function getAdminUser(userId) {
+  return request(`/admin/users/${userId}`)
+}
+
 async function updateUserStatus(userId, status) {
   return request(`/admin/users/${userId}/status`, {
     method: 'PATCH',
@@ -198,6 +217,7 @@ export {
   getCurrentUser,
   updateCurrentUser,
   getAdminUsers,
+  getAdminUser,
   getActiveElections,
   getElectionHistory,
   getVoteHistory,

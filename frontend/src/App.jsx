@@ -15,6 +15,7 @@ import ElectionHistory from './pages/ElectionHistory'
 import ElectionResults from './pages/ElectionResults'
 import ElectionDetail from './pages/ElectionDetail'
 import ManageUsers from './pages/ManageUsers'
+import AdminViewUser from './pages/AdminViewUser'
 import ViewAccount from './pages/ViewAccount'
 import UpdateAccount from './pages/UpdateAccount'
 
@@ -39,6 +40,7 @@ function App() {
         <Route path="/election-results" element={<ElectionResults />} />
         <Route path="/election-detail" element={<ElectionDetail />} />
         <Route path="/manage-users" element={<ManageUsers />} />
+        <Route path="/admin/users/:userId" element={<AdminViewUser />} />
         <Route path="/view-account" element={<ViewAccount />} />
         <Route path="/update-account" element={<UpdateAccount />} />
         <Route path="*" element={<div className="min-h-screen flex items-center justify-center text-slate-300 text-xl">404 — Page Not Found</div>} />
