@@ -11,25 +11,23 @@ function ActiveElections() {
   const [role, setRole] = useState('')
 
   useEffect(() => {
-    Promise.all([getActiveElections(), getCurrentUser()])
-      .then(([elections, user]) => {
-        setActiveElections(elections)
-        setRole(user.role || '')
-      })
+    getCurrentUser()
+      .then((user) => setRole(user.role || ''))
+      .catch(() => navigate('/login'))
+  }, [navigate])
+
+  useEffect(() => {
+    setLoading(true)
+    getActiveElections({ search: searchQuery })
+      .then(setActiveElections)
       .catch(() => navigate('/login'))
       .finally(() => setLoading(false))
-  }, [navigate])
+  }, [searchQuery, navigate])
 
   const handleSearch = (e) => {
     e.preventDefault()
     setSearchQuery(searchInput)
   }
-
-  const filteredElections = activeElections.filter((election) => {
-    const q = searchQuery.toLowerCase()
-    if (!q) return true
-    return election.title.toLowerCase().includes(q)
-  })
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -64,10 +62,10 @@ function ActiveElections() {
           <div className="divide-y divide-slate-700">
             {loading ? (
               <div className="px-6 py-8 text-center text-sm text-slate-400">Loading elections...</div>
-            ) : filteredElections.length === 0 ? (
+            ) : activeElections.length === 0 ? (
               <div className="px-6 py-8 text-center text-sm text-slate-400">No elections found.</div>
             ) : (
-              filteredElections.map((election) => (
+              activeElections.map((election) => (
                 <div key={election.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
                   <span className="font-medium text-slate-100">{election.title}</span>
                   <span>

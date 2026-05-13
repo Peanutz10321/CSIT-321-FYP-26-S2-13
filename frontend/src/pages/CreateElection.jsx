@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   addElectionVoter,
   activateElection,
-  createElectionDraft,
+  createElection,
   updateElection,
   getElectionDrafts,
   getEligibleVoters,
@@ -91,7 +91,7 @@ function CreateElection() {
         await updateElection(selectedDraftId, buildPayload(candidateNames))
         alert('Draft updated successfully!')
       } else {
-        const election = await createElectionDraft(buildPayload(candidateNames))
+        const election = await createElection(buildPayload(candidateNames))
         for (const institutionId of voters) {
           await addElectionVoter(election.id, institutionId)
         }
@@ -120,7 +120,7 @@ function CreateElection() {
         }
         electionId = selectedDraftId
       } else {
-        const election = await createElectionDraft(buildPayload(candidateNames))
+        const election = await createElection(buildPayload(candidateNames))
         for (const institutionId of voters) {
           await addElectionVoter(election.id, institutionId)
         }

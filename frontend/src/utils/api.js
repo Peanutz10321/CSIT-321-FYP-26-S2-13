@@ -73,7 +73,7 @@ async function updateCurrentUser(data) {
   })
 }
 
-async function getAdminUsers(filters = {}) {
+async function listUsers(filters = {}) {
   const params = new URLSearchParams()
 
   if (filters.search?.trim()) {
@@ -92,16 +92,27 @@ async function getAdminUsers(filters = {}) {
   return request(`/admin/users${query ? `?${query}` : ''}`)
 }
 
-async function getActiveElections() {
-  return request('/elections/active')
+async function getActiveElections(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  const query = params.toString()
+  return request(`/elections/active${query ? `?${query}` : ''}`)
 }
 
-async function getElectionHistory() {
-  return request('/elections/history')
+async function getElectionHistory(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  if (filters.start_date) params.set('start_date', filters.start_date)
+  if (filters.end_date) params.set('end_date', filters.end_date)
+  const query = params.toString()
+  return request(`/elections/history${query ? `?${query}` : ''}`)
 }
 
-async function getElectionDrafts() {
-  return request('/elections/drafts')
+async function getElectionDrafts(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  const query = params.toString()
+  return request(`/elections/drafts${query ? `?${query}` : ''}`)
 }
 
 async function getEligibleVoters(electionId) {
@@ -154,15 +165,20 @@ async function submitVote(data) {
   })
 }
 
-async function getVoteHistory() {
-  return request('/votes/history')
+async function getVoteHistory(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  if (filters.start_date) params.set('start_date', filters.start_date)
+  if (filters.end_date) params.set('end_date', filters.end_date)
+  const query = params.toString()
+  return request(`/votes/history${query ? `?${query}` : ''}`)
 }
 
 async function getVoteDetails(voteId) {
   return request(`/votes/${voteId}`)
 }
 
-async function createElectionDraft(data) {
+async function createElection(data) {
   return request('/elections', {
     method: 'POST',
     data,
@@ -179,7 +195,7 @@ async function getAdminStats() {
   return request('/admin/stats')
 }
 
-async function getAdminUser(userId) {
+async function viewUser(userId) {
   return request(`/admin/users/${userId}`)
 }
 
@@ -188,6 +204,10 @@ async function updateUserStatus(userId, status) {
     method: 'PATCH',
     data: { status },
   })
+}
+
+function logoutUser() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
 function decodeJwt(token) {
@@ -216,8 +236,8 @@ export {
   loginUser,
   getCurrentUser,
   updateCurrentUser,
-  getAdminUsers,
-  getAdminUser,
+  listUsers,
+  viewUser,
   getActiveElections,
   getElectionHistory,
   getVoteHistory,
@@ -229,12 +249,13 @@ export {
   getElectionDetails,
   getElectionResults,
   updateElection,
-  createElectionDraft,
+  createElection,
   deleteElection,
   activateElection,
   extendElectionDeadline,
   submitVote,
   getAdminStats,
   updateUserStatus,
+  logoutUser,
   decodeJwt,
 }

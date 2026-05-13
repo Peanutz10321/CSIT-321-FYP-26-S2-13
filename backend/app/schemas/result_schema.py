@@ -15,4 +15,6 @@ class ElectionResultResponse(BaseModel):
     election_id: UUID
     election_title: str
     status: str
+    total_votes: int
+    winner: str | None
     results: list[CandidateResultResponse]

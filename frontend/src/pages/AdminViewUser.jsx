@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getAdminUser, getCurrentUser, updateUserStatus } from '../utils/api.js'
+import { viewUser, getCurrentUser, updateUserStatus } from '../utils/api.js'
 
 const STATUS_LABEL = {
   active: 'Active',
@@ -24,7 +24,7 @@ function AdminViewUser() {
   const [toggling, setToggling] = useState(false)
 
   useEffect(() => {
-    Promise.all([getCurrentUser(), getAdminUser(userId)])
+    Promise.all([getCurrentUser(), viewUser(userId)])
       .then(([me, target]) => {
         setCurrentUser(me)
         setUser(target)

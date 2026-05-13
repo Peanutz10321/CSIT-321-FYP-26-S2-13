@@ -8,18 +8,18 @@ function ElectionDraft() {
   const [loading, setLoading] = useState(true)
   const [activatingId, setActivatingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    getElectionDrafts()
+    setLoading(true)
+    getElectionDrafts({ search: searchQuery })
       .then((data) => setDrafts(data))
       .catch((error) => {
         alert(`Unable to load draft elections: ${error.message}`)
       })
       .finally(() => setLoading(false))
-  }, [])
-
-  const noDrafts = !loading && drafts.length === 0
+  }, [searchQuery])
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -27,36 +27,34 @@ function ElectionDraft() {
         <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
           <p className="text-sm font-medium uppercase tracking-wide text-amber-400">Election Drafts</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-100">Election Drafts</h1>
-          <div className="mt-6 max-w-md">
+          <form onSubmit={(e) => { e.preventDefault(); setSearchQuery(searchInput.trim()) }} className="mt-6 flex max-w-md gap-3">
             <label htmlFor="search" className="sr-only">Search</label>
             <input
               id="search"
-              type="search"
+              type="text"
               placeholder="Search drafts"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
             />
-          </div>
+            <button
+              type="submit"
+              className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              Search
+            </button>
+          </form>
         </div>
 
         {loading ? (
           <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">Loading drafts...</div>
-        ) : noDrafts && searchTerm === '' ? (
+        ) : drafts.length === 0 ? (
           <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">
-            No drafts available. Create one to get started!
+            {searchQuery ? 'No drafts match your search.' : 'No drafts available. Create one to get started!'}
           </div>
-        ) : (() => {
-          const filteredDrafts = drafts.filter((draft) =>
-            draft.title.toLowerCase().includes(searchTerm.toLowerCase())
-          )
-          return filteredDrafts.length === 0 ? (
-            <div className="rounded-3xl border border-slate-700 bg-slate-800 p-6 text-slate-300">
-              No drafts match your search.
-            </div>
-          ) : (
+        ) : (
           <div className="space-y-4">
-            {filteredDrafts.map((draft) => {
+            {drafts.map((draft) => {
               return (
                 <div key={draft.id} className="rounded-3xl border border-slate-700 bg-slate-800 p-6 shadow-sm">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -135,8 +133,7 @@ function ElectionDraft() {
               )
             })}
           </div>
-          );
-        })()}
+        )}
 
         <div className="pt-4">
           <button

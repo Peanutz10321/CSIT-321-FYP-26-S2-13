@@ -18,6 +18,7 @@ class VoteResponse(BaseModel):
     receipt_code: str
     submitted_at: datetime
     bulletin_status: str
+    candidate_name: str | None = None
 
     class Config:
         from_attributes = True

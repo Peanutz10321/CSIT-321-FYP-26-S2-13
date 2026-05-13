@@ -9,7 +9,6 @@ from app.schemas.auth_schema import RegisterRequest, LoginRequest, AuthResponse
 from app.schemas.user_schema import UserResponse
 from app.security.password import hash_password, verify_password
 from app.security.jwt import create_access_token
-from app.security.security import get_current_user
 
 _FIRST_NAMES = [
     "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Jamie", "Quinn",
@@ -27,7 +26,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
+def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     """
     Public registration.
     Only student and teacher accounts can be registered publicly.
@@ -92,7 +91,7 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(request: LoginRequest, db: Session = Depends(get_db)):
+def loginUser(request: LoginRequest, db: Session = Depends(get_db)):
     """
     Login for student, teacher, and system admin.
     Suspended users cannot login.
@@ -128,6 +127,3 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
     return AuthResponse(access_token=access_token)
 
-@router.post("/logout")
-def logout(current_user: User = Depends(get_current_user)):
-    return{"message": "Logged out successfully"}

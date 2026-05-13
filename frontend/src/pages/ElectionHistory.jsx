@@ -20,11 +20,13 @@ function ElectionHistory() {
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
 
   useEffect(() => {
-    getElectionHistory()
+    setLoading(true)
+    setError(null)
+    getElectionHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
       .then((data) => setElections(data || []))
       .catch((err) => setError(err.message || 'Failed to load election history.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [searchQuery, startDate, endDate])
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -32,17 +34,6 @@ function ElectionHistory() {
     setStartDate(startDateInput)
     setEndDate(endDateInput)
   }
-
-  const filteredElections = elections.filter((election) => {
-    const matchesText = !searchQuery || election.title.toLowerCase().includes(searchQuery.toLowerCase())
-    if (!matchesText) return false
-
-    const electionEnd = new Date(election.end_date)
-    if (startDate && electionEnd < new Date(startDate + 'T00:00:00')) return false
-    if (endDate && electionEnd > new Date(endDate + 'T23:59:59')) return false
-
-    return true
-  })
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -103,10 +94,10 @@ function ElectionHistory() {
               <div className="px-6 py-8 text-center text-sm text-slate-400">Loading election history...</div>
             ) : error ? (
               <div className="px-6 py-8 text-center text-sm text-rose-400">{error}</div>
-            ) : filteredElections.length === 0 ? (
+            ) : elections.length === 0 ? (
               <div className="px-6 py-8 text-center text-sm text-slate-400">No elections found.</div>
             ) : (
-              filteredElections.map((election) => (
+              elections.map((election) => (
                 <div key={election.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
                   <span className="font-medium text-slate-100">{election.title}</span>
                   <span>

@@ -1,8 +1,8 @@
 import hashlib
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/votes", tags=["Votes"])
 
 
 @router.post("/", response_model=VoteResponse, status_code=status.HTTP_201_CREATED)
-def create_vote(
+def submitVote(
     payload: VoteCreate,
     db: Session = Depends(get_db),
     current_student: User = Depends(require_student),
@@ -138,18 +138,28 @@ def create_vote(
 
 
 @router.get("/history", response_model=list[VoteHistoryResponse])
-def view_vote_history(
+def getVoteHistory(
+    search: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
     current_student: User = Depends(require_student),
 ):
-    records = (
+    query = (
         db.query(Ballot, Election)
         .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)
         .join(Election, Ballot.election_id == Election.id)
         .filter(ElectionVoter.student_id == current_student.id)
-        .order_by(Ballot.submitted_at.desc())
-        .all()
     )
+
+    if search:
+        query = query.filter(Election.title.ilike(f"%{search}%"))
+    if start_date:
+        query = query.filter(Ballot.submitted_at >= datetime(start_date.year, start_date.month, start_date.day))
+    if end_date:
+        query = query.filter(Ballot.submitted_at <= datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
+
+    records = query.order_by(Ballot.submitted_at.desc()).all()
 
     return [
         VoteHistoryResponse(
@@ -165,7 +175,7 @@ def view_vote_history(
 
 
 @router.get("/{vote_id}", response_model=VoteResponse)
-def view_vote_details(
+def getVoteDetails(
     vote_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_student: User = Depends(require_student),
@@ -186,4 +196,30 @@ def view_vote_details(
             detail="Vote not found",
         )
 
-    return ballot
+    candidate_name = None
+    prefix = "encrypted_placeholder:"
+    if ballot.encrypted_vote.startswith(prefix):
+        cid_str = ballot.encrypted_vote.replace(prefix, "", 1)
+        try:
+            cid = uuid.UUID(cid_str)
+            candidate = (
+                db.query(Candidate)
+                .filter(Candidate.id == cid, Candidate.election_id == ballot.election_id)
+                .first()
+            )
+            if candidate:
+                candidate_name = candidate.name
+        except (ValueError, AttributeError):
+            pass
+
+    return VoteResponse(
+        id=ballot.id,
+        election_id=ballot.election_id,
+        election_voter_id=ballot.election_voter_id,
+        encrypted_vote=ballot.encrypted_vote,
+        vote_hash=ballot.vote_hash,
+        receipt_code=ballot.receipt_code,
+        submitted_at=ballot.submitted_at,
+        bulletin_status=ballot.bulletin_status.value,
+        candidate_name=candidate_name,
+    )

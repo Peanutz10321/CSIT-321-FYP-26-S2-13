@@ -35,7 +35,7 @@ def _legacy_tally(candidates, ballots) -> dict[str, int]:
 
 
 @router.get("/elections/{election_id}", response_model=ElectionResultResponse)
-def view_election_results(
+def getElectionResults(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -124,19 +124,28 @@ def view_election_results(
 
     db.commit()
 
-    result_items = [
-        CandidateResultResponse(
-            candidate_id=candidate.id,
-            candidate_name=candidate.name,
-            total_votes=tally[str(candidate.id)],
-            published_at=published_at,
-        )
-        for candidate in candidates
-    ]
+    result_items = sorted(
+        [
+            CandidateResultResponse(
+                candidate_id=candidate.id,
+                candidate_name=candidate.name,
+                total_votes=tally[str(candidate.id)],
+                published_at=published_at,
+            )
+            for candidate in candidates
+        ],
+        key=lambda r: r.total_votes,
+        reverse=True,
+    )
+
+    total_votes = sum(r.total_votes for r in result_items)
+    winner = result_items[0].candidate_name if result_items and total_votes > 0 else None
 
     return ElectionResultResponse(
         election_id=election.id,
         election_title=election.title,
         status=election.status.value,
+        total_votes=total_votes,
+        winner=winner,
         results=result_items,
     )

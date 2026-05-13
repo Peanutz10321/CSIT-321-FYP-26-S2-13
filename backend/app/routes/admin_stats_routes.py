@@ -24,7 +24,7 @@ class AdminStatsResponse(BaseModel):
 
 
 @router.get("", response_model=AdminStatsResponse)
-def get_admin_stats(
+def getAdminStats(
     db: Session = Depends(get_db),
     _: User = Depends(require_system_admin),
 ):

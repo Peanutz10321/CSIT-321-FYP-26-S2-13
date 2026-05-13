@@ -12,7 +12,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @router.get("/me", response_model=UserResponse)
-def view_own_account(
+def getCurrentUser(
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -23,7 +23,7 @@ def view_own_account(
 
 
 @router.put("/me", response_model=UserResponse)
-def update_own_account(
+def updateCurrentUser(
     request: UserUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

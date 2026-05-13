@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAdminUsers } from '../utils/api.js'
+import { listUsers } from '../utils/api.js'
 
 const STATUS_LABEL = {
   active: 'Active',
@@ -26,7 +26,7 @@ function ManageUsers() {
     setLoading(true)
     setError('')
 
-    getAdminUsers({ search: searchQuery })
+    listUsers({ search: searchQuery })
       .then((data) => setUsers(data))
       .catch((err) => {
         if (err.message?.toLowerCase().includes('not authenticated')) {

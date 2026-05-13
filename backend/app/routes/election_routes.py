@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
 @router.post("/", response_model=ElectionResponse, status_code=status.HTTP_201_CREATED)
-def create_election(
+def createElection(
     payload: ElectionCreate,
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
@@ -80,7 +80,7 @@ def create_election(
     return created_election
 
 @router.get("/active", response_model=list[ElectionResponse])
-def view_active_election_list(
+def getActiveElections(
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -108,12 +108,14 @@ def view_active_election_list(
     return query.order_by(Election.start_date.desc()).all()
 
 @router.get("/history", response_model=list[ElectionResponse])
-def view_election_history(
+def getElectionHistory(
     search: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    
+
     query = (
         db.query(Election)
         .options(joinedload(Election.candidates))
@@ -131,11 +133,15 @@ def view_election_history(
 
     if search:
         query = query.filter(Election.title.ilike(f"%{search}%"))
+    if start_date:
+        query = query.filter(Election.end_date >= datetime(start_date.year, start_date.month, start_date.day))
+    if end_date:
+        query = query.filter(Election.end_date <= datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59))
 
     return query.order_by(Election.created_at.desc()).all()
 
 @router.get("/drafts", response_model=list[ElectionResponse])
-def view_draft_election_list(
+def getElectionDrafts(
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
@@ -153,7 +159,7 @@ def view_draft_election_list(
     return query.order_by(Election.created_at.desc()).all()
 
 @router.get("/{election_id}", response_model=ElectionResponse)
-def view_election_details(
+def getElectionDetails(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -197,7 +203,7 @@ def view_election_details(
     return election
 
 @router.put("/{election_id}", response_model=ElectionResponse)
-def update_draft_election(
+def updateElection(
     election_id: UUID,
     payload: ElectionUpdate,
     db: Session = Depends(get_db),
@@ -278,7 +284,7 @@ def update_draft_election(
     return updated_election
 
 @router.delete("/{election_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_draft_election(
+def deleteElection(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
@@ -312,7 +318,7 @@ def delete_draft_election(
 
 
 @router.patch("/{election_id}/extend-deadline", response_model=ElectionResponse)
-def extend_active_election_deadline(
+def extendElectionDeadline(
     election_id: UUID,
     payload: ExtendDeadlineRequest,
     db: Session = Depends(get_db),
@@ -361,7 +367,7 @@ def extend_active_election_deadline(
     response_model=ElectionVoterResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def add_eligible_voter(
+def addEligibleVoter(
     election_id: UUID,
     payload: AddElectionVoterRequest,
     db: Session = Depends(get_db),
@@ -450,7 +456,7 @@ def add_eligible_voter(
     "/{election_id}/voters",
     response_model=list[ElectionVoterDetailResponse],
 )
-def view_eligible_voters(
+def getEligibleVoters(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
@@ -493,7 +499,7 @@ def view_eligible_voters(
     ]
 
 @router.patch("/{election_id}/complete", response_model=ElectionResponse)
-def complete_election(
+def completeElection(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
@@ -531,7 +537,7 @@ def complete_election(
     return election
 
 @router.patch("/{election_id}/activate", response_model=ElectionResponse)
-def activate_election(
+def activateElection(
     election_id: UUID,
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),

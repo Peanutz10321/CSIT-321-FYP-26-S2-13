@@ -15,7 +15,7 @@ router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
 
 
 @router.get("", response_model=list[UserResponse])
-def list_users(
+def listUsers(
     search: Optional[str] = Query(default=None),
     role: Optional[str] = Query(default=None),
     status_filter: Optional[str] = Query(default=None, alias="status"),
@@ -59,7 +59,7 @@ def list_users(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def view_user(
+def viewUser(
     user_id: UUID,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_system_admin),
@@ -80,7 +80,7 @@ def view_user(
 
 
 @router.patch("/{user_id}/status", response_model=UserResponse)
-def set_user_status(
+def updateUserStatus(
     user_id: UUID,
     body: UserStatusUpdateRequest,
     db: Session = Depends(get_db),
@@ -118,7 +118,7 @@ def set_user_status(
 
 
 @router.patch("/{user_id}/suspend", response_model=UserResponse)
-def suspend_user(
+def suspendUser(
     user_id: UUID,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_system_admin),
@@ -137,7 +137,7 @@ def suspend_user(
 
 
 @router.patch("/{user_id}/unsuspend", response_model=UserResponse)
-def unsuspend_user(
+def unsuspendUser(
     user_id: UUID,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_system_admin),

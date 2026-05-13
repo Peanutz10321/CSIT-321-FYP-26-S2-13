@@ -17,11 +17,13 @@ function VoteHistory() {
   const [endDate, setEndDate] = useState('')
 
   useEffect(() => {
-    getVoteHistory()
+    setLoading(true)
+    setError(null)
+    getVoteHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
       .then(setVoteHistory)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [searchQuery, startDate, endDate])
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -29,17 +31,6 @@ function VoteHistory() {
     setStartDate(startDateInput)
     setEndDate(endDateInput)
   }
-
-  const filteredHistory = voteHistory.filter((item) => {
-    const matchesText = !searchQuery || item.election_title?.toLowerCase().includes(searchQuery.toLowerCase())
-    if (!matchesText) return false
-
-    const votedAt = new Date(item.submitted_at)
-    if (startDate && votedAt < new Date(startDate + 'T00:00:00')) return false
-    if (endDate && votedAt > new Date(endDate + 'T23:59:59')) return false
-
-    return true
-  })
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -100,10 +91,10 @@ function VoteHistory() {
               <div className="px-6 py-8 text-center text-sm text-slate-400">Loading vote history...</div>
             ) : error ? (
               <div className="px-6 py-8 text-center text-sm text-rose-400">{error}</div>
-            ) : filteredHistory.length === 0 ? (
+            ) : voteHistory.length === 0 ? (
               <div className="px-6 py-8 text-center text-sm text-slate-400">No vote history found.</div>
             ) : (
-              filteredHistory.map((item) => (
+              voteHistory.map((item) => (
                 <div key={item.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
                   <span className="font-medium text-slate-100">{item.election_title}</span>
                   <span>

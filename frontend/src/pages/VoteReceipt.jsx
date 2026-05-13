@@ -54,8 +54,6 @@ function VoteReceipt() {
     )
   }
 
-  const candidateId = vote.encrypted_vote?.split(':')[1]
-  const votedCandidate = election.candidates?.find((c) => c.id === candidateId) ?? null
   const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
 
   return (
@@ -95,7 +93,7 @@ function VoteReceipt() {
             </p>
             <p>
               <span className="font-semibold text-slate-100">Candidate Voted: </span>
-              {votedCandidate?.name ?? '—'}
+              {vote.candidate_name ?? '—'}
             </p>
           </div>
         </div>

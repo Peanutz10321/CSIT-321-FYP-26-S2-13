@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getCurrentUser } from '../utils/api.js'
+import { getCurrentUser, logoutUser } from '../utils/api.js'
 
 function AdminDashboard() {
   const navigate = useNavigate()
@@ -27,7 +27,7 @@ function AdminDashboard() {
             <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Admin'}</h1>
           </div>
           <button
-            onClick={() => navigate('/login')}
+            onClick={() => { logoutUser(); navigate('/login') }}
             className="inline-flex items-center justify-center rounded-2xl bg-slate-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-600"
           >
             Log Out

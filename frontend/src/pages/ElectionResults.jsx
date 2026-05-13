@@ -60,11 +60,9 @@ function ElectionResults() {
   }
 
   const resultsError = results?._error ?? null
-  const sortedResults = results?.results
-    ? [...results.results].sort((a, b) => b.total_votes - a.total_votes)
-    : []
-  const totalVotes = sortedResults.reduce((sum, r) => sum + r.total_votes, 0)
-  const winner = sortedResults[0]?.candidate_name ?? '—'
+  const resultsList = results?.results ?? []
+  const totalVotes = results?.total_votes ?? 0
+  const winner = results?.winner ?? '—'
   const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
 
   const Row = ({ label, children }) => (
@@ -99,10 +97,10 @@ function ElectionResults() {
             <Row label="Number Of Votes Per Candidate">
               {resultsError ? (
                 <span className="text-amber-400">{resultsError}</span>
-              ) : sortedResults.length === 0 ? (
+              ) : resultsList.length === 0 ? (
                 'No votes cast'
               ) : (
-                sortedResults.map((r) => `${r.candidate_name}: ${r.total_votes}`).join(', ')
+                resultsList.map((r) => `${r.candidate_name}: ${r.total_votes}`).join(', ')
               )}
             </Row>
             <div className="pt-4">
