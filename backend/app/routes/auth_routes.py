@@ -56,19 +56,23 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Account with this email already exists",
         )
 
-    # Check duplicate username
-    existing_username = db.query(User).filter(User.username == request.username).first()
-    if existing_username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists",
-        )
-
     # Generate institution_id: STU-001 for students, TCH-001 for teachers
     role_enum = UserRole(request.role)
     prefix = "STU" if role_enum == UserRole.student else "TCH"
-    count = db.query(User).filter(User.role == role_enum).count()
-    institution_id = f"{prefix}-{count + 1:03d}"
+    existing_ids = (
+        db.query(User.institution_id)
+        .filter(User.role == role_enum)
+        .all()
+    )
+    max_num = 0
+    for (iid,) in existing_ids:
+        try:
+            num = int(iid.split("-")[1])
+            if num > max_num:
+                max_num = num
+        except (IndexError, ValueError):
+            pass
+    institution_id = f"{prefix}-{max_num + 1:03d}"
 
     new_user = User(
         institution_id=institution_id,
