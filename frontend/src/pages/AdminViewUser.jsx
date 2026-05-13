@@ -111,8 +111,8 @@ function AdminViewUser() {
                     {toggling
                       ? 'Updating...'
                       : user.status === 'suspended'
-                        ? 'Unsuspend'
-                        : 'Suspend'}
+                        ? 'Unsuspend Account'
+                        : 'Suspend Account'}
                   </button>
                 )}
               </div>

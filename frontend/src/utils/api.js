@@ -73,44 +73,44 @@ async function updateCurrentUser(data) {
   })
 }
 
-async function listUsers(filters = {}) {
+async function listUsers(search = {}) {
   const params = new URLSearchParams()
 
-  if (filters.search?.trim()) {
-    params.set('search', filters.search.trim())
+  if (search.search?.trim()) {
+    params.set('search', search.search.trim())
   }
 
-  if (filters.role?.trim()) {
-    params.set('role', filters.role.trim())
+  if (search.role?.trim()) {
+    params.set('role', search.role.trim())
   }
 
-  if (filters.status?.trim()) {
-    params.set('status', filters.status.trim())
+  if (search.status?.trim()) {
+    params.set('status', search.status.trim())
   }
 
   const query = params.toString()
   return request(`/admin/users${query ? `?${query}` : ''}`)
 }
 
-async function getActiveElections(filters = {}) {
+async function getActiveElections(search = {}) {
   const params = new URLSearchParams()
-  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  if (search.search?.trim()) params.set('search', search.search.trim())
   const query = params.toString()
   return request(`/elections/active${query ? `?${query}` : ''}`)
 }
 
-async function getElectionHistory(filters = {}) {
+async function getElectionHistory(search = {}) {
   const params = new URLSearchParams()
-  if (filters.search?.trim()) params.set('search', filters.search.trim())
-  if (filters.start_date) params.set('start_date', filters.start_date)
-  if (filters.end_date) params.set('end_date', filters.end_date)
+  if (search.search?.trim()) params.set('search', search.search.trim())
+  if (search.start_date) params.set('start_date', search.start_date)
+  if (search.end_date) params.set('end_date', search.end_date)
   const query = params.toString()
   return request(`/elections/history${query ? `?${query}` : ''}`)
 }
 
-async function getElectionDrafts(filters = {}) {
+async function getElectionDrafts(search = {}) {
   const params = new URLSearchParams()
-  if (filters.search?.trim()) params.set('search', filters.search.trim())
+  if (search.search?.trim()) params.set('search', search.search.trim())
   const query = params.toString()
   return request(`/elections/drafts${query ? `?${query}` : ''}`)
 }
@@ -165,11 +165,11 @@ async function submitVote(data) {
   })
 }
 
-async function getVoteHistory(filters = {}) {
+async function getVoteHistory(search = {}) {
   const params = new URLSearchParams()
-  if (filters.search?.trim()) params.set('search', filters.search.trim())
-  if (filters.start_date) params.set('start_date', filters.start_date)
-  if (filters.end_date) params.set('end_date', filters.end_date)
+  if (search.search?.trim()) params.set('search', search.search.trim())
+  if (search.start_date) params.set('start_date', search.start_date)
+  if (search.end_date) params.set('end_date', search.end_date)
   const query = params.toString()
   return request(`/votes/history${query ? `?${query}` : ''}`)
 }
