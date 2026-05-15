@@ -116,7 +116,11 @@ function CreateElection() {
       if (selectedDraftId) {
         await updateElection(selectedDraftId, buildPayload(candidateNames))
         for (const institutionId of voters) {
-          try { await addElectionVoter(selectedDraftId, institutionId) } catch { /* already added */ }
+          try {
+              await addElectionVoter(selectedDraftId, institutionId)
+            } catch (error) {
+              if (!error.message.includes('already added')) throw error
+            }
         }
         electionId = selectedDraftId
       } else {
