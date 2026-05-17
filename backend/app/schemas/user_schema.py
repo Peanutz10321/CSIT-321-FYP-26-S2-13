@@ -1,7 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from typing import Annotated
 
 
 class UserResponse(BaseModel):
@@ -20,7 +21,7 @@ class UserResponse(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    username: str | None = None
+    username: Annotated[str, Field(min_length=1)] | None = None
     email: EmailStr | None = None
     password: str | None = None
 

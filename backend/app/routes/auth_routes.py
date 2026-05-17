@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
 from app.schemas.auth_schema import RegisterRequest, LoginRequest, AuthResponse
 from app.schemas.user_schema import UserResponse
+from email_validator import validate_email, EmailNotValidError
 from app.security.password import hash_password, verify_password
 from app.security.jwt import create_access_token
 
@@ -33,6 +34,22 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     System admin accounts must NOT be publicly registered.
     """
 
+    if not request.username or not request.username.strip() \
+            or not request.email or not request.email.strip() \
+            or not request.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing field detected. Please key in again.",
+        )
+
+    try:
+        validate_email(request.email, check_deliverability=False)
+    except EmailNotValidError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing field detected. Please key in again.",
+        )
+
     # Admin cannot register from public route
     if request.role == UserRole.system_admin.value:
         raise HTTPException(
@@ -52,7 +69,7 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account with this email already exists",
+            detail="Account already exists.",
         )
 
     # Generate institution_id: STU-001 for students, TCH-001 for teachers

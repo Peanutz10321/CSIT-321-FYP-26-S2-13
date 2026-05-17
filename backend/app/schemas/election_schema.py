@@ -21,12 +21,16 @@ class CandidateResponse(BaseModel):
         from_attributes = True
 
 
-class ElectionCreate(BaseModel):
+class ElectionDraftCreate(BaseModel):
     title: str = Field(..., min_length=1)
     description: str | None = None
     start_date: datetime
     end_date: datetime
     candidates: list[CandidateCreate]
+
+
+class ElectionCreate(ElectionDraftCreate):
+    voter_institution_ids: list[str] = []
 
 
 class ElectionResponse(BaseModel):
