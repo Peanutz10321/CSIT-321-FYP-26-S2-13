@@ -56,7 +56,6 @@ function Login() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
-              required
             />
           </div>
 
@@ -71,7 +70,6 @@ function Login() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
-              required
             />
           </div>
 

@@ -52,8 +52,8 @@ function UpdateAccount() {
       await updateCurrentUser(payload)
       alert('Profile updated successfully!')
       navigate(-1)
-    } catch (error) {
-      alert(`Failed to update profile: ${error.message}`)
+    } catch {
+      alert('Missing fields or invalid input detected')
     } finally {
       setSaving(false)
     }
@@ -110,21 +110,14 @@ function UpdateAccount() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex justify-center">
           <button
             type="button"
             onClick={handleSave}
             disabled={saving}
             className="rounded-2xl bg-blue-600 px-6 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-          >
-            Cancel
+            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>

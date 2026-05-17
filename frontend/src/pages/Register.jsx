@@ -12,20 +12,6 @@ function Register() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-
-    if (!username.trim()) {
-      alert('Please enter a username.')
-      return
-    }
-    if (!email.trim()) {
-      alert('Please enter your email.')
-      return
-    }
-    if (!password) {
-      alert('Please enter a password.')
-      return
-    }
-
     setSubmitting(true)
 
     try {
@@ -76,7 +62,6 @@ function Register() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
-              required
             />
           </div>
 
@@ -90,7 +75,6 @@ function Register() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
-              required
             />
           </div>
 
@@ -104,7 +88,6 @@ function Register() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
-              required
             />
           </div>
 
