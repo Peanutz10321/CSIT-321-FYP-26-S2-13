@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { getElectionDetails, getEligibleVoters } from '../utils/api.js'
+import { getElectionDetails, getEligibleVoters, getVoteHistory } from '../utils/api.js'
 
 function ElectionDetail() {
   const navigate = useNavigate()
@@ -11,6 +11,7 @@ function ElectionDetail() {
 
   const [election, setElection] = useState(null)
   const [eligibleCount, setEligibleCount] = useState(null)
+  const [existingVoteId, setExistingVoteId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -20,15 +21,16 @@ function ElectionDetail() {
       return
     }
 
-    const fetches = [getElectionDetails(electionId)]
-    if (role === 'teacher') {
-      fetches.push(getEligibleVoters(electionId).catch(() => null))
-    }
-
-    Promise.all(fetches)
-      .then(([electionData, votersData]) => {
+    Promise.all([
+      getElectionDetails(electionId),
+      role === 'teacher' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
+      role === 'student' && from === 'active' ? getVoteHistory().catch(() => []) : Promise.resolve([]),
+    ])
+      .then(([electionData, votersData, voteHistory]) => {
         setElection(electionData)
-        if (votersData !== undefined) setEligibleCount(votersData ? votersData.length : null)
+        if (votersData !== null) setEligibleCount(votersData ? votersData.length : null)
+        const existing = voteHistory.find((v) => v.election_id === electionId)
+        if (existing) setExistingVoteId(existing.id)
       })
       .catch((err) => setError(err.message || 'Failed to load election details.'))
       .finally(() => setLoading(false))
@@ -117,13 +119,22 @@ function ElectionDetail() {
           )}
 
           {role === 'student' && from === 'active' && (
-            <div className="mt-10 flex justify-center">
+            <div className="mt-10 flex justify-center gap-4">
               <button
-                onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
-                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
+                onClick={() => !existingVoteId && navigate('/cast-vote', { state: { electionId: election.id } })}
+                disabled={!!existingVoteId}
+                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Cast Vote
+                {existingVoteId ? 'Voted' : 'Cast Vote'}
               </button>
+              {existingVoteId && (
+                <button
+                  onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
+                  className="border-2 border-blue-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-blue-300 transition hover:border-blue-400 hover:text-blue-200"
+                >
+                  View Vote Details
+                </button>
+              )}
             </div>
           )}
         </div>
