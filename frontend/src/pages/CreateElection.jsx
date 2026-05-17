@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  addElectionVoter,
-  activateElection,
   createElection,
-  updateElection,
+  createElectionDraft,
   getElectionDrafts,
   getEligibleVoters,
 } from '../utils/api'
@@ -24,14 +22,11 @@ function CreateElection() {
   }, [])
 
   const parseList = (text) =>
-    text
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean)
+    text.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
 
   const normalizeDateTime = (dt) => (dt && dt.length === 16 ? `${dt}:00` : dt)
 
-  const buildPayload = (candidateNames) => ({
+  const buildPayload = (candidateNames, voters = []) => ({
     title: title.trim(),
     description: null,
     start_date: new Date().toISOString().slice(0, 19),
@@ -42,23 +37,10 @@ function CreateElection() {
       photo_url: null,
       display_order: index + 1,
     })),
+    voter_institution_ids: voters,
   })
 
-  const validate = (requireVoters = false) => {
-    const candidateNames = parseList(candidatesText)
-    if (!title.trim()) { alert('Please enter election title.'); return null }
-    if (!endDate) { alert('Please enter a deadline.'); return null }
-    if (candidateNames.length === 0) { alert('Please enter at least one candidate.'); return null }
-    const voters = parseList(eligibleVotersText)
-    if (requireVoters && voters.length === 0) {
-      alert('You must add at least one eligible student to create an active election.')
-      return null
-    }
-    return { candidateNames, voters }
-  }
-
-  const refreshDrafts = () =>
-    getElectionDrafts().then(setDrafts).catch(() => {})
+  const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
 
   const handleSelectDraft = async (draft) => {
     setSelectedDraftId(draft.id)
@@ -82,23 +64,11 @@ function CreateElection() {
   }
 
   const handleSaveDraft = async () => {
-    const result = validate(false)
-    if (!result) return
-    const { candidateNames, voters } = result
     setSaving(true)
     try {
-      if (selectedDraftId) {
-        await updateElection(selectedDraftId, buildPayload(candidateNames))
-        alert('Draft updated successfully!')
-      } else {
-        const election = await createElection(buildPayload(candidateNames))
-        for (const institutionId of voters) {
-          await addElectionVoter(election.id, institutionId)
-        }
-        setSelectedDraftId(election.id)
-        alert('Draft saved successfully!')
-      }
+      await createElectionDraft(buildPayload(parseList(candidatesText)))
       await refreshDrafts()
+      alert('Draft saved successfully!')
     } catch (error) {
       alert(`Failed to save draft: ${error.message}`)
     } finally {
@@ -107,30 +77,9 @@ function CreateElection() {
   }
 
   const handleCreate = async () => {
-    const result = validate(true)
-    if (!result) return
-    const { candidateNames, voters } = result
     setSaving(true)
     try {
-      let electionId = selectedDraftId
-      if (selectedDraftId) {
-        await updateElection(selectedDraftId, buildPayload(candidateNames))
-        for (const institutionId of voters) {
-          try {
-              await addElectionVoter(selectedDraftId, institutionId)
-            } catch (error) {
-              if (!error.message.includes('already added')) throw error
-            }
-        }
-        electionId = selectedDraftId
-      } else {
-        const election = await createElection(buildPayload(candidateNames))
-        for (const institutionId of voters) {
-          await addElectionVoter(election.id, institutionId)
-        }
-        electionId = election.id
-      }
-      await activateElection(electionId)
+      await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
       alert('Election created successfully!')
       navigate('/election-drafts')
     } catch (error) {
@@ -147,16 +96,12 @@ function CreateElection() {
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-5xl">
-
-        {/* Single bordered card */}
         <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 shadow-lg">
 
-          {/* Title spanning full width */}
           <div className="border-b border-slate-500 py-5">
             <h2 className="text-center text-xl font-semibold text-slate-100">Create Election</h2>
           </div>
 
-          {/* Body: sidebar + divider + form */}
           <div className="flex min-h-[480px]">
 
             {/* Sidebar */}
@@ -244,7 +189,6 @@ function CreateElection() {
                 </div>
               </div>
 
-              {/* Buttons pinned to bottom-right */}
               <div className="mt-8 flex justify-end gap-4">
                 <button
                   type="button"
@@ -260,14 +204,13 @@ function CreateElection() {
                   disabled={saving}
                   className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-base font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {saving ? 'Saving...' : 'Save Election Draft'}
+                  {saving ? 'Saving...' : 'Save as Draft'}
                 </button>
               </div>
             </div>
 
           </div>
         </div>
-
       </div>
     </div>
   )

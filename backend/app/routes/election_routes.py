@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
-from app.schemas.election_schema import ElectionCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
+from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
 from app.security.security import get_current_user, require_teacher
 from app.security.homomorphic import (
     generate_keypair,
@@ -26,6 +26,56 @@ from app.schemas.election_voter_schema import (
 
 
 router = APIRouter(prefix="/elections", tags=["Elections"])
+
+
+@router.post("/draft", response_model=ElectionResponse, status_code=status.HTTP_201_CREATED)
+def createElectionDraft(
+    payload: ElectionDraftCreate,
+    db: Session = Depends(get_db),
+    current_teacher: User = Depends(require_teacher),
+):
+    if payload.end_date <= payload.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End date must be after start date",
+        )
+
+    if not payload.candidates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one candidate is required",
+        )
+
+    election = Election(
+        teacher_id=current_teacher.id,
+        title=payload.title,
+        description=payload.description,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        status=ElectionStatus.draft,
+    )
+
+    db.add(election)
+    db.flush()
+
+    for index, candidate_data in enumerate(payload.candidates, start=1):
+        candidate = Candidate(
+            election_id=election.id,
+            name=candidate_data.name,
+            description=candidate_data.description,
+            photo_url=candidate_data.photo_url,
+            display_order=candidate_data.display_order or index,
+        )
+        db.add(candidate)
+
+    db.commit()
+
+    return (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.id == election.id)
+        .first()
+    )
 
 
 @router.post("/", response_model=ElectionResponse, status_code=status.HTTP_201_CREATED)
@@ -67,6 +117,32 @@ def createElection(
             display_order=candidate_data.display_order or index,
         )
         db.add(candidate)
+
+    for institution_id in payload.voter_institution_ids:
+        student = db.query(User).filter(User.institution_id == institution_id).first()
+        if not student:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Student '{institution_id}' not found",
+            )
+        if student.role != UserRole.student:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"'{institution_id}' is not a student account",
+            )
+        if student.status != UserStatus.active:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Student '{institution_id}' is not active",
+            )
+        db.add(ElectionVoter(
+            election_id=election.id,
+            student_id=student.id,
+            eligibility_status=EligibilityStatus.eligible,
+        ))
 
     db.commit()
 

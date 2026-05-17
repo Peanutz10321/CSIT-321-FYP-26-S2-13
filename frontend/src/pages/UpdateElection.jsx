@@ -29,9 +29,6 @@ function UpdateElection() {
   const normalizeDateTime = (dt) => (dt && dt.length === 16 ? `${dt}:00` : dt)
 
   const handleSave = async () => {
-    if (!title.trim()) { alert('Please enter a title.'); return }
-    if (!endDate) { alert('Please enter a deadline.'); return }
-
     setSaving(true)
     try {
       if (election.status === 'active') {

@@ -178,6 +178,13 @@ async function getVoteDetails(voteId) {
   return request(`/votes/${voteId}`)
 }
 
+async function createElectionDraft(data) {
+  return request('/elections/draft', {
+    method: 'POST',
+    data,
+  })
+}
+
 async function createElection(data) {
   return request('/elections', {
     method: 'POST',
@@ -206,7 +213,7 @@ async function updateUserStatus(userId, status) {
   })
 }
 
-function logoutUser() {
+function logout() {
   localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
@@ -249,6 +256,7 @@ export {
   getElectionDetails,
   getElectionResults,
   updateElection,
+  createElectionDraft,
   createElection,
   deleteElection,
   activateElection,
@@ -256,6 +264,6 @@ export {
   submitVote,
   getAdminStats,
   updateUserStatus,
-  logoutUser,
+  logout,
   decodeJwt,
 }
