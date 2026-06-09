@@ -67,7 +67,7 @@ function ManageUsers() {
             />
             <button
               type="submit"
-              className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+              className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
             >
               Search
             </button>
@@ -75,7 +75,7 @@ function ManageUsers() {
               <button
                 type="button"
                 onClick={handleClearSearch}
-                className="rounded-2xl bg-slate-700 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600"
+                className="w-full rounded-2xl bg-slate-700 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 sm:w-auto"
               >
                 Clear
               </button>
@@ -94,7 +94,7 @@ function ManageUsers() {
         </div>
 
         <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm">
-          <div className="grid grid-cols-3 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
+          <div className="hidden sm:grid sm:grid-cols-3 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
             <span>Username</span>
             <span>Status</span>
             <span className="text-right">View</span>
@@ -106,15 +106,15 @@ function ManageUsers() {
               <div className="px-6 py-8 text-center text-sm text-slate-400">No users found.</div>
             ) : (
               users.map((user) => (
-                <div key={user.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
-                  <span>{user.username}</span>
+                <div key={user.id} className="flex flex-col gap-3 px-4 py-4 text-sm text-slate-300 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6 sm:py-5 sm:items-center">
+                  <span className="truncate font-medium text-slate-100">{user.username}</span>
                   <span className={`font-medium ${STATUS_BADGE[user.status] ?? 'text-slate-300'}`}>
                     {STATUS_LABEL[user.status] ?? user.status}
                   </span>
-                  <div className="flex justify-end">
+                  <div className="sm:flex sm:justify-end">
                     <button
                       onClick={() => navigate(`/admin/users/${user.id}`)}
-                      className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+                      className="w-full rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700 sm:w-auto"
                     >
                       View
                     </button>
@@ -128,7 +128,7 @@ function ManageUsers() {
         <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
           <button
             onClick={() => navigate('/admin-dashboard')}
-            className="rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600"
+            className="w-full rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600 sm:w-auto"
           >
             Back to Dashboard
           </button>
