@@ -90,23 +90,24 @@ function CreateElection() {
   }
 
   const inputClass =
-    'flex-1 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
-  const labelClass = 'w-52 shrink-0 font-semibold text-slate-100'
+    'w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
+  const labelClass = 'font-semibold text-slate-100 sm:w-52 sm:shrink-0'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-5xl">
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 shadow-lg">
+        <div className="rounded-2xl border border-slate-600 bg-slate-800/80 shadow-lg md:rounded-sm md:border-2 md:border-slate-500">
 
           <div className="border-b border-slate-500 py-5">
             <h2 className="text-center text-xl font-semibold text-slate-100">Create Election</h2>
           </div>
 
-          <div className="flex min-h-[480px]">
+          <div className="flex flex-col md:flex-row md:min-h-[480px]">
 
             {/* Sidebar */}
-            <div className="w-48 shrink-0 border-r border-slate-500">
-              <div className="overflow-y-auto">
+            <div className="w-full border-b border-slate-600 md:w-48 md:shrink-0 md:border-b-0 md:border-r md:border-slate-500">
+              <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400 md:hidden">Saved Drafts</p>
+              <div className="max-h-40 overflow-y-auto md:max-h-none">
                 {drafts.length === 0 ? (
                   <p className="px-4 py-6 text-center text-xs text-slate-400">No drafts yet</p>
                 ) : (
@@ -143,9 +144,10 @@ function CreateElection() {
             </div>
 
             {/* Form */}
-            <div className="flex flex-1 flex-col justify-between px-10 py-8">
+            <div className="flex flex-1 flex-col justify-between px-4 py-6 md:px-10 md:py-8">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400 md:hidden">Election Details</p>
               <div className="space-y-6">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                   <span className={labelClass}>Title:</span>
                   <input
                     type="text"
@@ -156,8 +158,8 @@ function CreateElection() {
                   />
                 </div>
 
-                <div className="flex items-start gap-4">
-                  <span className={`${labelClass} pt-3`}>Candidates:</span>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
+                  <span className={`${labelClass} sm:pt-3`}>Candidates:</span>
                   <textarea
                     rows={3}
                     value={candidatesText}
@@ -167,7 +169,7 @@ function CreateElection() {
                   />
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                   <span className={labelClass}>Deadline:</span>
                   <input
                     type="datetime-local"
@@ -177,8 +179,8 @@ function CreateElection() {
                   />
                 </div>
 
-                <div className="flex items-start gap-4">
-                  <span className={`${labelClass} pt-3`}>Eligible Student Votes:</span>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
+                  <span className={`${labelClass} sm:pt-3`}>Eligible Student Votes:</span>
                   <textarea
                     rows={3}
                     value={eligibleVotersText}
@@ -189,12 +191,12 @@ function CreateElection() {
                 </div>
               </div>
 
-              <div className="mt-8 flex justify-end gap-4">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end sm:gap-4">
                 <button
                   type="button"
                   onClick={handleCreate}
                   disabled={saving}
-                  className="rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {saving ? 'Creating...' : 'Create'}
                 </button>
@@ -202,7 +204,7 @@ function CreateElection() {
                   type="button"
                   onClick={handleSaveDraft}
                   disabled={saving}
-                  className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-base font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-base font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {saving ? 'Saving...' : 'Save as Draft'}
                 </button>
