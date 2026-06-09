@@ -66,18 +66,18 @@ function UpdateElection() {
 
   const isActive = election?.status === 'active'
   const inputClass =
-    'flex-1 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
-  const labelClass = 'w-32 shrink-0 font-semibold text-slate-100'
+    'w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
+  const labelClass = 'font-semibold text-slate-100 sm:w-32 sm:shrink-0'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-xl space-y-6">
 
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
+        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-4 py-6 shadow-lg sm:px-8 sm:py-10">
           <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Update Election Details</h2>
 
           <div className="space-y-6">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <span className={labelClass}>Title:</span>
               <input
                 type="text"
@@ -89,7 +89,7 @@ function UpdateElection() {
               />
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <span className={labelClass}>Deadline:</span>
               <input
                 type="datetime-local"
@@ -100,12 +100,12 @@ function UpdateElection() {
             </div>
           </div>
 
-          <div className="mt-10 flex justify-center">
+          <div className="mt-10 sm:flex sm:justify-center">
             <button
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
