@@ -96,13 +96,23 @@ def createElection(
             detail="At least one candidate is required",
         )
 
+    if not payload.voter_institution_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one eligible voter is required",
+        )
+
+    public_key, private_key = generate_keypair()
+
     election = Election(
         teacher_id=current_teacher.id,
         title=payload.title,
         description=payload.description,
         start_date=payload.start_date,
         end_date=payload.end_date,
-        status=ElectionStatus.draft,
+        status=ElectionStatus.active,
+        public_key_n=serialize_public_key(public_key),
+        private_key_json=serialize_private_key(private_key),
     )
 
     db.add(election)

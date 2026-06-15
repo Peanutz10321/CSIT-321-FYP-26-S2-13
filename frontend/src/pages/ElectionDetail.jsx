@@ -119,20 +119,23 @@ function ElectionDetail() {
           )}
 
           {role === 'student' && from === 'active' && (
-            <div className="mt-10 flex justify-center gap-4">
-              <button
-                onClick={() => !existingVoteId && navigate('/cast-vote', { state: { electionId: election.id } })}
-                disabled={!!existingVoteId}
-                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {existingVoteId ? 'Voted' : 'Cast Vote'}
-              </button>
-              {existingVoteId && (
+            <div className="mt-10 flex items-center justify-center gap-4">
+              {existingVoteId ? (
+                <>
+                  <p className="text-sm font-semibold text-emerald-400">Voted</p>
+                  <button
+                    onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
+                    className="border-2 border-blue-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-blue-300 transition hover:border-blue-400 hover:text-blue-200"
+                  >
+                    View Vote Details
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
-                  className="border-2 border-blue-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-blue-300 transition hover:border-blue-400 hover:text-blue-200"
+                  onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
+                  className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
                 >
-                  View Vote Details
+                  Cast Vote
                 </button>
               )}
             </div>
