@@ -99,7 +99,7 @@ def valid_election_payload():
 
 def create_election_as_teacher(teacher_token: str):
     response = client.post(
-        ELECTION_BASE,
+        f"{ELECTION_BASE}/draft",
         json=valid_election_payload(),
         headers=auth_header(teacher_token),
     )
@@ -123,7 +123,7 @@ def set_election_status(election_id: str, status: ElectionStatus):
 class TestCreateElection:
     def test_teacher_can_create_draft_election_with_candidates(self, teacher_token):
         response = client.post(
-            ELECTION_BASE,
+            f"{ELECTION_BASE}/draft",
             json=valid_election_payload(),
             headers=auth_header(teacher_token),
         )
@@ -134,6 +134,32 @@ class TestCreateElection:
         assert data["title"] is not None
         assert data["status"] == "draft"
         assert len(data["candidates"]) == 2
+
+    def test_teacher_can_create_active_election_with_voters(self, teacher_token, student_user):
+        payload = valid_election_payload()
+        payload["voter_institution_ids"] = [student_user["institution_id"]]
+
+        response = client.post(
+            ELECTION_BASE,
+            json=payload,
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 201, response.text
+
+        data = response.json()
+        assert data["status"] == "active"
+        assert len(data["candidates"]) == 2
+
+    def test_create_active_election_requires_eligible_voter(self, teacher_token):
+        response = client.post(
+            ELECTION_BASE,
+            json=valid_election_payload(),
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+        assert "eligible voter" in response.json()["detail"].lower()
 
     def test_student_cannot_create_election(self, student_token):
         response = client.post(

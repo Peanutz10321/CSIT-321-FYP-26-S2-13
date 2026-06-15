@@ -121,7 +121,7 @@ def valid_election_payload() -> dict:
 
 def create_election_as_teacher(teacher_token: str) -> dict:
     response = client.post(
-        ELECTION_BASE,
+        f"{ELECTION_BASE}/draft",
         json=valid_election_payload(),
         headers=auth_header(teacher_token),
     )
