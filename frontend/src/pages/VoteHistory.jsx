@@ -46,7 +46,7 @@ function VoteHistory() {
                   type="text"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search elections..."
+                  placeholder="Search votes..."
                   className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
                 />
                 <button
@@ -83,7 +83,7 @@ function VoteHistory() {
         <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm">
           <div className="grid grid-cols-3 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
             <span>Election Title</span>
-            <span>Complete Date</span>
+            <span>Voted Date</span>
             <span className="text-right">View</span>
           </div>
           <div className="divide-y divide-slate-700">

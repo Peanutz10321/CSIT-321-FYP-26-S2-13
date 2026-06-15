@@ -285,7 +285,7 @@ class TestHEIntegration:
         self.student = student
 
     def _create_and_activate(self) -> dict:
-        r = client.post(ELECTION_BASE, json=_election_payload(), headers=_auth(self.teacher_token))
+        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.teacher_token))
         assert r.status_code == 201, r.text
         election = r.json()
 
@@ -369,7 +369,8 @@ class TestHEIntegration:
         endpoint has no keys — voting must return 500."""
         from app.models.election import ElectionStatus as ES
 
-        r = client.post(ELECTION_BASE, json=_election_payload(), headers=_auth(self.teacher_token))
+        # Create as a draft so no keypair is generated, then force-activate below.
+        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.teacher_token))
         assert r.status_code == 201
         election = r.json()
 

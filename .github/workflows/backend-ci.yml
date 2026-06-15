@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: sqlite:///./test.db
           JWT_SECRET: test
           JWT_ALGORITHM: HS256
           TESTING: "true"

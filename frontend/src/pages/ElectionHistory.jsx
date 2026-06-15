@@ -18,6 +18,7 @@ function ElectionHistory() {
   const navigate = useNavigate()
   const location = useLocation()
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
+  const role = returnPath.includes('teacher') ? 'teacher' : 'student'
 
   useEffect(() => {
     setLoading(true)
@@ -39,7 +40,7 @@ function ElectionHistory() {
     <div className="min-h-screen bg-slate-900 px-4 py-10">
       <div className="mx-auto max-w-5xl space-y-8">
         <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <h1 className="text-3xl font-semibold text-slate-100">Election History</h1>
+          <h1 className="text-3xl font-semibold text-slate-100">My Election History</h1>
 
           <form onSubmit={handleSearch} className="mt-6">
             <div className="grid grid-cols-3 gap-6">
@@ -107,7 +108,7 @@ function ElectionHistory() {
                     <button
                       onClick={() =>
                         election.status === 'completed'
-                          ? navigate('/election-results', { state: { electionId: election.id } })
+                          ? navigate('/election-results', { state: { electionId: election.id, role } })
                           : navigate('/election-detail', { state: { electionId: election.id } })
                       }
                       className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"

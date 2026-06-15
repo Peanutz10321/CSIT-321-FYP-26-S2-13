@@ -33,6 +33,13 @@ def pytest_configure(config):
     import app.models.audit_log  
 
     from app.database import Base, engine
+
+    # For the throwaway SQLite test database, rebuild the schema from scratch on
+    # every run so stale tables can never mask a model change. Never drop tables
+    # on a server database (e.g. Postgres).
+    if engine.dialect.name == "sqlite":
+        Base.metadata.drop_all(bind=engine)
+
     Base.metadata.create_all(bind=engine)
 
 
@@ -47,7 +54,7 @@ def clean_test_records():
         db.execute(text("""
             DELETE FROM audit_logs
             WHERE actor_user_id IN (
-                SELECT id FROM users WHERE email ILIKE '%@test.com'
+                SELECT id FROM users WHERE email LIKE '%@test.com'
             )
         """))
 
@@ -57,7 +64,7 @@ def clean_test_records():
                 SELECT e.id
                 FROM elections e
                 JOIN users u ON u.id = e.teacher_id
-                WHERE u.email ILIKE '%@test.com'
+                WHERE u.email LIKE '%@test.com'
             )
         """))
 
@@ -67,13 +74,13 @@ def clean_test_records():
                 SELECT e.id
                 FROM elections e
                 JOIN users u ON u.id = e.teacher_id
-                WHERE u.email ILIKE '%@test.com'
+                WHERE u.email LIKE '%@test.com'
             )
             OR election_voter_id IN (
                 SELECT ev.id
                 FROM election_voters ev
                 JOIN users u ON u.id = ev.student_id
-                WHERE u.email ILIKE '%@test.com'
+                WHERE u.email LIKE '%@test.com'
             )
         """))
 
@@ -83,10 +90,10 @@ def clean_test_records():
                 SELECT e.id
                 FROM elections e
                 JOIN users u ON u.id = e.teacher_id
-                WHERE u.email ILIKE '%@test.com'
+                WHERE u.email LIKE '%@test.com'
             )
             OR student_id IN (
-                SELECT id FROM users WHERE email ILIKE '%@test.com'
+                SELECT id FROM users WHERE email LIKE '%@test.com'
             )
         """))
 
@@ -96,20 +103,20 @@ def clean_test_records():
                 SELECT e.id
                 FROM elections e
                 JOIN users u ON u.id = e.teacher_id
-                WHERE u.email ILIKE '%@test.com'
+                WHERE u.email LIKE '%@test.com'
             )
         """))
 
         db.execute(text("""
             DELETE FROM elections
             WHERE teacher_id IN (
-                SELECT id FROM users WHERE email ILIKE '%@test.com'
+                SELECT id FROM users WHERE email LIKE '%@test.com'
             )
         """))
 
         db.execute(text("""
             DELETE FROM users
-            WHERE email ILIKE '%@test.com'
+            WHERE email LIKE '%@test.com'
         """))
 
         db.commit()

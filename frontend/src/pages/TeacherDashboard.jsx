@@ -36,7 +36,7 @@ function TeacherDashboard() {
         <main className="mt-10 grid grid-cols-2 gap-6">
           {[
             { label: 'View User Account', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/view-account', { state: { from: '/teacher-dashboard' } }) } },
-            { label: 'New Elections', action: () => navigate('/create-election') },
+            { label: 'New Election', action: () => navigate('/create-election') },
             { label: 'My Active Elections', action: () => navigate('/active-elections') },
             { label: 'My Election History', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/election-history', { state: { from: '/teacher-dashboard' } }) } },
           ].map(({ label, action }) => (

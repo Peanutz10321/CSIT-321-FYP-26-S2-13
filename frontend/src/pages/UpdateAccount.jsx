@@ -50,10 +50,9 @@ function UpdateAccount() {
       }
 
       await updateCurrentUser(payload)
-      alert('Profile updated successfully!')
       navigate(-1)
     } catch {
-      alert('Missing fields or invalid input detected')
+      alert('Missing fields or invalid input detected. Please key in again.')
     } finally {
       setSaving(false)
     }

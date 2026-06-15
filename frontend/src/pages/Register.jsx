@@ -38,7 +38,7 @@ function Register() {
         navigate('/login')
       }
     } catch (error) {
-      alert(`Registration failed: ${error.message}`)
+      alert(`${error.message}`)
     } finally {
       setSubmitting(false)
     }

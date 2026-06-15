@@ -6,6 +6,7 @@ function ElectionResults() {
   const navigate = useNavigate()
   const location = useLocation()
   const electionId = location.state?.electionId
+  const role = location.state?.role ?? 'student'
 
   const [election, setElection] = useState(null)
   const [results, setResults] = useState(null)
@@ -22,16 +23,16 @@ function ElectionResults() {
     Promise.all([
       getElectionDetails(electionId),
       getElectionResults(electionId).catch((err) => ({ _error: err.message })),
-      getEligibleVoters(electionId).catch(() => null),
+      role === 'teacher' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
     ])
       .then(([electionData, resultsData, votersData]) => {
         setElection(electionData)
         setResults(resultsData)
-        setEligibleCount(votersData ? votersData.length : null)
+        if (votersData !== null) setEligibleCount(votersData ? votersData.length : null)
       })
       .catch((err) => setError(err.message || 'Failed to load election data.'))
       .finally(() => setLoading(false))
-  }, [electionId, navigate])
+  }, [electionId, navigate, role])
 
   if (loading) {
     return (
@@ -91,9 +92,15 @@ function ElectionResults() {
             <Row label="Total Votes Cast">
               {resultsError ? '—' : totalVotes}
             </Row>
-            <Row label="Eligible Student Voters">
-              {eligibleCount !== null ? eligibleCount : '—'}
-            </Row>
+            {role === 'teacher' ? (
+              <Row label="Eligible Student Voters">
+                {eligibleCount !== null ? eligibleCount : '—'}
+              </Row>
+            ) : (
+              <Row label="Election Organizer">
+                {election.teacher_username ?? '—'}
+              </Row>
+            )}
             <Row label="Number Of Votes Per Candidate">
               {resultsError ? (
                 <span className="text-amber-400">{resultsError}</span>

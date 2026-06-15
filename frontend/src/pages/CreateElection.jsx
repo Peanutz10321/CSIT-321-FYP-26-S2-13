@@ -68,7 +68,6 @@ function CreateElection() {
     try {
       await createElectionDraft(buildPayload(parseList(candidatesText)))
       await refreshDrafts()
-      alert('Draft saved successfully!')
     } catch (error) {
       alert(`Failed to save draft: ${error.message}`)
     } finally {
@@ -79,9 +78,8 @@ function CreateElection() {
   const handleCreate = async () => {
     setSaving(true)
     try {
-      await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
-      alert('Election created successfully!')
-      navigate('/election-drafts')
+      const election = await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
+      navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'teacher' } })
     } catch (error) {
       alert(`Failed to create election: ${error.message}`)
     } finally {
@@ -204,7 +202,7 @@ function CreateElection() {
                   disabled={saving}
                   className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-base font-semibold text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {saving ? 'Saving...' : 'Save as Draft'}
+                  {saving ? 'Saving...' : 'Save Election Draft'}
                 </button>
               </div>
             </div>
