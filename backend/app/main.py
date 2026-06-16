@@ -1,10 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from fastapi import Depends
 
-from app.database import get_db
+from app.database import Base, engine, get_db
+
+import app.models.user  
+import app.models.election 
+import app.models.candidate 
+import app.models.election_voter  
+import app.models.ballot  
+import app.models.candidate_result  
+import app.models.audit_log  
+
 from app.routes.auth_routes import router as auth_router
 from app.routes.user_routes import router as user_router
 from app.routes.admin_user_routes import router as admin_user_router
@@ -13,7 +24,14 @@ from app.routes.election_routes import router as election_router
 from app.routes.vote_routes import router as vote_router
 from app.routes.result_routes import router as result_router
 
-app = FastAPI(title="Homomorphic E-Voting API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="Homomorphic E-Voting API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
