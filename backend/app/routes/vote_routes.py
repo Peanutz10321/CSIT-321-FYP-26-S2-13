@@ -1,10 +1,11 @@
 import hashlib
 import uuid
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.time import now_sgt
 from app.database import get_db
 from app.models.user import User
 from app.models.election import Election, ElectionStatus
@@ -40,7 +41,7 @@ def submitVote(
         )
 
     # start_date and end_date are stored as naive SGT (UTC+8).
-    now = datetime.utcnow() + timedelta(hours=8)
+    now = now_sgt()
 
     if now < election.start_date or now > election.end_date:
         raise HTTPException(

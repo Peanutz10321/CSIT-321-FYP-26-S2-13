@@ -26,10 +26,16 @@ function CreateElection() {
 
   const normalizeDateTime = (dt) => (dt && dt.length === 16 ? `${dt}:00` : dt)
 
+  const nowLocalNaive = () => {
+    const d = new Date()
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+    return d.toISOString().slice(0, 19)
+  }
+
   const buildPayload = (candidateNames, voters = []) => ({
     title: title.trim(),
     description: null,
-    start_date: new Date().toISOString().slice(0, 19),
+    start_date: nowLocalNaive(),
     end_date: normalizeDateTime(endDate),
     candidates: candidateNames.map((name, index) => ({
       name,
