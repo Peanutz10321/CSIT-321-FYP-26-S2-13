@@ -1,6 +1,7 @@
 import random
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -72,6 +73,13 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Account already exists.",
         )
 
+    existing_username = db.query(User).filter(User.username == request.username).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists.",
+        )
+
     # Generate institution_id: STU-001 for students, TCH-001 for teachers
     role_enum = UserRole(request.role)
     prefix = "STU" if role_enum == UserRole.student else "TCH"
@@ -101,7 +109,16 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     )
 
     db.add(new_user)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account could not be created. Please try again.",
+        )
+
     db.refresh(new_user)
 
     return new_user

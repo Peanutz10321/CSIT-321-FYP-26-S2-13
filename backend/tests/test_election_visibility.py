@@ -101,7 +101,7 @@ def valid_election_payload() -> dict:
         "title": unique_text("Class Representative Election"),
         "description": "Election for class representative",
         "start_date": (now - timedelta(minutes=10)).isoformat(),
-        "end_date": (now + timedelta(hours=3)).isoformat(),
+        "end_date": (now + timedelta(days=2)).isoformat(),
         "candidates": [
             {
                 "name": unique_text("Alice"),

@@ -328,3 +328,58 @@ def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
 
     assert unsuspend_response.status_code == 200
     assert unsuspend_response.json()["status"] == "active"
+
+
+def test_register_duplicate_username_is_rejected(client):
+    register_student(client)
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "student",
+            "email": "different@test.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "username" in response.json()["detail"].lower()
+
+
+def _admin_token(client, fake_db):
+    admin = make_user(
+        role=UserRole.system_admin,
+        institution_id="ADMIN001",
+        username="admin",
+        full_name="System Admin",
+        email="admin@test.com",
+        password="admin123",
+    )
+    fake_db.users.append(admin)
+    token = login(client, email="admin@test.com", password="admin123").json()["access_token"]
+    return admin, token
+
+
+def test_suspend_missing_user_returns_404(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    response = client.patch(f"/admin/users/{uuid4()}/suspend", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_unsuspend_missing_user_returns_404(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    response = client.patch(f"/admin/users/{uuid4()}/unsuspend", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_admin_cannot_suspend_self(client, fake_db):
+    admin, token = _admin_token(client, fake_db)
+
+    response = client.patch(f"/admin/users/{admin.id}/suspend", headers=auth_headers(token))
+
+    assert response.status_code == 400

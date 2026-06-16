@@ -63,6 +63,7 @@ function ElectionResults() {
   const resultsError = results?._error ?? null
   const resultsList = results?.results ?? []
   const totalVotes = results?.total_votes ?? 0
+  const tiedCandidates = results?.tied_candidates ?? []
   const winner = results?.winner ?? '—'
   const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
 
@@ -113,7 +114,11 @@ function ElectionResults() {
             <div className="pt-4">
               <span className="font-semibold text-slate-100">Winner: </span>
               <span className="text-slate-300">
-                {resultsError || totalVotes === 0 ? '—' : winner}
+                {resultsError || totalVotes === 0
+                  ? '—'
+                  : tiedCandidates.length > 0
+                    ? `— (Tie: ${tiedCandidates.join(', ')})`
+                    : winner}
               </span>
             </div>
           </div>

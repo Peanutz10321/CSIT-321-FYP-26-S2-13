@@ -1,15 +1,17 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.time import now_sgt
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.models.ballot import Ballot
 from app.models.candidate_result import CandidateResult
+from app.models.election_voter import ElectionVoter
 from app.schemas.result_schema import ElectionResultResponse, CandidateResultResponse
 from app.security.security import get_current_user
 from app.security.homomorphic import (
@@ -48,12 +50,31 @@ def getElectionResults(
             detail="Election not found",
         )
 
-    # end_date is stored as naive SGT (UTC+8) from the frontend.
-    # Use current SGT time for comparison so there is no 8-hour offset error.
-    now = datetime.utcnow() + timedelta(hours=8)
+    if current_user.role == UserRole.teacher and election.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view results for elections that you created",
+        )
+
+    if current_user.role == UserRole.student:
+        voter_record = (
+            db.query(ElectionVoter)
+            .filter(
+                ElectionVoter.election_id == election.id,
+                ElectionVoter.student_id == current_user.id,
+            )
+            .first()
+        )
+        if not voter_record:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not eligible to view this election",
+            )
+
+    now = now_sgt()
 
     is_completed = election.status == ElectionStatus.completed
-    is_ended = election.end_date is not None and election.end_date < now
+    is_ended = election.status == ElectionStatus.active and election.end_date is not None and election.end_date < now
 
     if not is_completed and not is_ended:
         raise HTTPException(
@@ -66,16 +87,6 @@ def getElectionResults(
         election.status = ElectionStatus.completed
         db.commit()
         db.refresh(election)
-
-    # Basic access rule:
-    # - teacher who created the election can view
-    # - students can view completed results
-    # - system admin can view
-    if current_user.role == UserRole.teacher and election.teacher_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view results for elections that you created",
-        )
 
     candidates = db.query(Candidate).filter(Candidate.election_id == election.id).all()
 
@@ -139,7 +150,16 @@ def getElectionResults(
     )
 
     total_votes = sum(r.total_votes for r in result_items)
-    winner = result_items[0].candidate_name if result_items and total_votes > 0 else None
+
+    winner = None
+    tied_candidates: list[str] = []
+    if result_items and total_votes > 0:
+        top_votes = result_items[0].total_votes
+        leaders = [r.candidate_name for r in result_items if r.total_votes == top_votes]
+        if len(leaders) > 1:
+            tied_candidates = leaders
+        else:
+            winner = leaders[0]
 
     return ElectionResultResponse(
         election_id=election.id,
@@ -147,5 +167,6 @@ def getElectionResults(
         status=election.status.value,
         total_votes=total_votes,
         winner=winner,
+        tied_candidates=tied_candidates,
         results=result_items,
     )

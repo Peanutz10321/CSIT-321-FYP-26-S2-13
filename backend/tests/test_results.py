@@ -267,3 +267,82 @@ class TestElectionResults:
         )
 
         assert response.status_code == 404
+
+    def test_ineligible_student_cannot_view_results(
+        self,
+        teacher_token,
+        student_user,
+        student_token,
+    ):
+        election, _ = prepare_completed_election_with_vote(
+            teacher_token,
+            student_user,
+            student_token,
+        )
+
+        outsider = register_user("student")
+        outsider_token = login_user(outsider["email"])
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(outsider_token),
+        )
+
+        assert response.status_code == 403
+
+    def test_draft_past_end_date_has_no_results(self, teacher_token):
+        election = create_election_as_teacher(teacher_token)
+
+        db = SessionLocal()
+        try:
+            row = db.query(Election).filter(Election.id == UUID(election["id"])).first()
+            row.end_date = datetime.utcnow() - timedelta(days=1)
+            db.commit()
+        finally:
+            db.close()
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+
+    def test_tie_reports_no_single_winner(self, teacher_token, student_user, student_token):
+        election = create_election_as_teacher(teacher_token)
+
+        second_student = register_user("student")
+        second_student_token = login_user(second_student["email"])
+
+        add_student_to_election(teacher_token, election["id"], student_user)
+        add_student_to_election(teacher_token, election["id"], second_student)
+        activate_election(teacher_token, election["id"])
+
+        candidate_one = election["candidates"][0]["id"]
+        candidate_two = election["candidates"][1]["id"]
+
+        first_vote = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_id": candidate_one},
+            headers=auth_header(student_token),
+        )
+        assert first_vote.status_code == 201, first_vote.text
+
+        second_vote = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_id": candidate_two},
+            headers=auth_header(second_student_token),
+        )
+        assert second_vote.status_code == 201, second_vote.text
+
+        set_election_status(election["id"], ElectionStatus.completed)
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["winner"] is None
+        assert len(data["tied_candidates"]) == 2

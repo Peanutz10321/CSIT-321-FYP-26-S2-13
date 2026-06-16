@@ -79,7 +79,7 @@ def valid_election_payload():
         "title": unique_text("Class Representative Election"),
         "description": "Election for class representative",
         "start_date": (now + timedelta(hours=1)).isoformat(),
-        "end_date": (now + timedelta(hours=3)).isoformat(),
+        "end_date": (now + timedelta(days=2)).isoformat(),
         "candidates": [
             {
                 "name": unique_text("Alice"),
@@ -420,3 +420,63 @@ class TestElectionStatusTransitions:
 
         assert response.status_code == 400
         assert "active" in response.json()["detail"].lower()
+
+
+def _expire_election(election_id: str):
+    db = SessionLocal()
+    try:
+        row = db.query(Election).filter(Election.id == UUID(election_id)).first()
+        row.end_date = datetime.utcnow() - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+
+
+class TestElectionListFiltering:
+    def test_active_list_excludes_expired_elections(self, teacher_token, student_user):
+        election = create_election_as_teacher(teacher_token)
+        client.post(
+            f"{ELECTION_BASE}/{election['id']}/voters",
+            json={"institution_id": student_user["institution_id"]},
+            headers=auth_header(teacher_token),
+        )
+        client.patch(
+            f"{ELECTION_BASE}/{election['id']}/activate",
+            headers=auth_header(teacher_token),
+        )
+        _expire_election(election["id"])
+
+        response = client.get(f"{ELECTION_BASE}/active", headers=auth_header(teacher_token))
+
+        assert response.status_code == 200, response.text
+        ids = [item["id"] for item in response.json()]
+        assert election["id"] not in ids
+
+    def test_history_includes_completed_excludes_running(self, teacher_token):
+        completed = create_election_as_teacher(teacher_token)
+        set_election_status(completed["id"], ElectionStatus.completed)
+
+        running = create_election_as_teacher(teacher_token)
+        set_election_status(running["id"], ElectionStatus.active)
+
+        response = client.get(f"{ELECTION_BASE}/history", headers=auth_header(teacher_token))
+
+        assert response.status_code == 200, response.text
+        ids = [item["id"] for item in response.json()]
+        assert completed["id"] in ids
+        assert running["id"] not in ids
+
+
+class TestDraftRelaxation:
+    def test_draft_save_with_no_candidates_succeeds(self, teacher_token):
+        payload = valid_election_payload()
+        payload["candidates"] = []
+
+        response = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["status"] == "draft"

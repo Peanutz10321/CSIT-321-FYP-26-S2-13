@@ -17,4 +17,5 @@ class ElectionResultResponse(BaseModel):
     status: str
     total_votes: int
     winner: str | None
+    tied_candidates: list[str] = []
     results: list[CandidateResultResponse]
