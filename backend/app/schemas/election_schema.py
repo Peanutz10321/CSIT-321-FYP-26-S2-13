@@ -22,11 +22,13 @@ class CandidateResponse(BaseModel):
 
 
 class ElectionDraftCreate(BaseModel):
-    title: str = Field(..., min_length=1)
+    # Drafts may be partially filled, so everything except start_date (always sent
+    # by the client) is optional. Full validation happens at create/activate time.
+    title: str = ""
     description: str | None = None
     start_date: datetime
-    end_date: datetime
-    candidates: list[CandidateCreate]
+    end_date: datetime | None = None
+    candidates: list[CandidateCreate] = []
 
 
 class ElectionCreate(ElectionDraftCreate):
@@ -41,7 +43,7 @@ class ElectionResponse(BaseModel):
     description: str | None = None
     status: str
     start_date: datetime
-    end_date: datetime
+    end_date: datetime | None = None
     candidates: list[CandidateResponse] = []
 
     class Config:

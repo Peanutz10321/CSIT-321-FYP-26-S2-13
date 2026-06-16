@@ -74,6 +74,18 @@ def createElection(
     db: Session = Depends(get_db),
     current_teacher: User = Depends(require_teacher),
 ):
+    if not payload.title or not payload.title.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Title is required",
+        )
+
+    if not payload.start_date or not payload.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Start date and end date are required",
+        )
+
     if payload.end_date <= payload.start_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -192,6 +204,11 @@ def getElectionHistory(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date period please try again",
+        )
 
     query = (
         db.query(Election)
@@ -656,6 +673,12 @@ def activateElection(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Election must have at least one candidate before activation",
+        )
+
+    if not election.end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Election must have a deadline before activation",
         )
 
     eligible_voter_count = (

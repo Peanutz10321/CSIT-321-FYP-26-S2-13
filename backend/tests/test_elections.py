@@ -480,3 +480,46 @@ class TestDraftRelaxation:
 
         assert response.status_code == 201, response.text
         assert response.json()["status"] == "draft"
+
+    def test_draft_save_with_only_title_succeeds(self, teacher_token):
+        payload = {
+            "title": unique_text("Draft With Only Title"),
+            "description": None,
+            "start_date": datetime.utcnow().isoformat(),
+            "candidates": [],
+        }
+
+        response = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data["status"] == "draft"
+        assert data["end_date"] is None
+
+    def test_create_active_election_requires_end_date(self, teacher_token, student_user):
+        payload = valid_election_payload()
+        payload["voter_institution_ids"] = [student_user["institution_id"]]
+        payload.pop("end_date")
+
+        response = client.post(
+            ELECTION_BASE,
+            json=payload,
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+
+
+class TestDateFilter:
+    def test_history_invalid_date_period_rejected(self, teacher_token):
+        response = client.get(
+            f"{ELECTION_BASE}/history?start_date=2030-01-01&end_date=2020-01-01",
+            headers=auth_header(teacher_token),
+        )
+
+        assert response.status_code == 400
+        assert "invalid date period" in response.json()["detail"].lower()

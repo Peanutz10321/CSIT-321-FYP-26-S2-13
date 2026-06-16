@@ -146,6 +146,12 @@ def getVoteHistory(
     db: Session = Depends(get_db),
     current_student: User = Depends(require_student),
 ):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date period please try again",
+        )
+
     query = (
         db.query(Ballot, Election)
         .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)

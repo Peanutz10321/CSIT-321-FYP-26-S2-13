@@ -312,3 +312,12 @@ class TestVoteHistory:
         )
 
         assert response.status_code == 404
+
+    def test_vote_history_invalid_date_period_rejected(self, student_token):
+        response = client.get(
+            f"{VOTE_BASE}/history?start_date=2030-01-01&end_date=2020-01-01",
+            headers=auth_header(student_token),
+        )
+
+        assert response.status_code == 400
+        assert "invalid date period" in response.json()["detail"].lower()
