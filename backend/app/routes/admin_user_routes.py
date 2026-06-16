@@ -129,6 +129,18 @@ def suspendUser(
 
     user = db.query(User).filter(User.id == user_id).first()
 
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own status",
+        )
+
     user.status = UserStatus.suspended
     db.commit()
     db.refresh(user)
@@ -148,6 +160,17 @@ def unsuspendUser(
 
     user = db.query(User).filter(User.id == user_id).first()
 
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    if user.id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own status",
+        )
 
     user.status = UserStatus.active
     db.commit()
