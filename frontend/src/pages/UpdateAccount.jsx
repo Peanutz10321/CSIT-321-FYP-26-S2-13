@@ -52,7 +52,7 @@ function UpdateAccount() {
       await updateCurrentUser(payload)
       navigate(-1)
     } catch {
-      alert('Missing fields or invalid input detected. Please key in again.')
+      alert('Missing field or invalid input detected. Please key in again.')
     } finally {
       setSaving(false)
     }
