@@ -36,7 +36,7 @@ function CreateElection() {
     title: title.trim(),
     description: null,
     start_date: nowLocalNaive(),
-    end_date: normalizeDateTime(endDate),
+    end_date: endDate ? normalizeDateTime(endDate) : null,
     candidates: candidateNames.map((name, index) => ({
       name,
       description: null,
@@ -52,7 +52,7 @@ function CreateElection() {
     setSelectedDraftId(draft.id)
     setTitle(draft.title)
     setCandidatesText(draft.candidates.map((c) => c.name).join(', '))
-    setEndDate(draft.end_date.slice(0, 16))
+    setEndDate(draft.end_date ? draft.end_date.slice(0, 16) : '')
     try {
       const voters = await getEligibleVoters(draft.id)
       setEligibleVotersText(voters.map((v) => v.student_institution_id).join(', '))
@@ -70,6 +70,11 @@ function CreateElection() {
   }
 
   const handleSaveDraft = async () => {
+    if (!title.trim() && !candidatesText.trim() && !endDate && !eligibleVotersText.trim()) {
+      alert('Please key in something at least before saving.')
+      return
+    }
+
     setSaving(true)
     try {
       await createElectionDraft(buildPayload(parseList(candidatesText)))
@@ -86,8 +91,8 @@ function CreateElection() {
     try {
       const election = await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
       navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'teacher' } })
-    } catch (error) {
-      alert(`Failed to create election: ${error.message}`)
+    } catch {
+      alert('Missing field or invalid input detected. Please key in again.')
     } finally {
       setSaving(false)
     }
