@@ -32,7 +32,7 @@ function UpdateElection() {
     setSaving(true)
     try {
       if (election.status === 'active') {
-        await extendElectionDeadline(electionId, normalizeDateTime(endDate))
+        await extendElectionDeadline(electionId, normalizeDateTime(endDate), title.trim())
       } else {
         await updateElection(electionId, {
           title: title.trim(),
@@ -64,7 +64,6 @@ function UpdateElection() {
     )
   }
 
-  const isActive = election?.status === 'active'
   const inputClass =
     'w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
   const labelClass = 'font-semibold text-slate-100 sm:w-32 sm:shrink-0'
@@ -83,9 +82,8 @@ function UpdateElection() {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                disabled={isActive}
                 placeholder="Election title"
-                className={`${inputClass} ${isActive ? 'cursor-not-allowed opacity-50' : ''}`}
+                className={inputClass}
               />
             </div>
 

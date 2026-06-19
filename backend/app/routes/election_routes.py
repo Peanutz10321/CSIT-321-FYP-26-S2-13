@@ -451,13 +451,16 @@ def extendElectionDeadline(
             detail="Only active elections can have their deadline extended",
         )
 
-    if payload.new_end_date <= election.end_date:
+    if payload.new_end_date < election.end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New end date must be later than the current end date",
+            detail="New end date cannot be earlier than the current end date",
         )
 
     election.end_date = payload.new_end_date
+
+    if payload.title is not None:
+        election.title = payload.title
 
     db.commit()
     db.refresh(election)

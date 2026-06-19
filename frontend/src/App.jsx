@@ -9,7 +9,6 @@ import CastVote from './pages/CastVote'
 import VoteHistory from './pages/VoteHistory'
 import VoteReceipt from './pages/VoteReceipt'
 import CreateElection from './pages/CreateElection'
-import ElectionDraft from './pages/ElectionDraft'
 import UpdateElection from './pages/UpdateElection'
 import ElectionHistory from './pages/ElectionHistory'
 import ElectionResults from './pages/ElectionResults'
@@ -34,7 +33,6 @@ function App() {
         <Route path="/vote-history" element={<VoteHistory />} />
         <Route path="/vote-receipt/:voteId" element={<VoteReceipt />} />
         <Route path="/create-election" element={<CreateElection />} />
-        <Route path="/election-drafts" element={<ElectionDraft />} />
         <Route path="/update-election/:electionId" element={<UpdateElection />} />
         <Route path="/election-history" element={<ElectionHistory />} />
         <Route path="/election-results" element={<ElectionResults />} />

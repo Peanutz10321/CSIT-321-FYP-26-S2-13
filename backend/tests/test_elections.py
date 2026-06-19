@@ -354,7 +354,7 @@ class TestExtendDeadline:
         )
 
         assert response.status_code == 400
-        assert "later" in response.json()["detail"].lower()
+        assert "earlier" in response.json()["detail"].lower()
 
 class TestElectionStatusTransitions:
     def test_teacher_can_activate_own_draft_election(self, teacher_token, student_user):

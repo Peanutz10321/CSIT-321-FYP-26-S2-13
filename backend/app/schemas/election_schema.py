@@ -51,6 +51,7 @@ class ElectionResponse(BaseModel):
 
 class ExtendDeadlineRequest(BaseModel):
     new_end_date: datetime
+    title: str | None = Field(default=None, min_length=1)
 
 
 class ElectionUpdate(BaseModel):

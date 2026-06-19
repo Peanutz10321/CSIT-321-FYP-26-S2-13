@@ -59,7 +59,7 @@ function ViewAccount() {
             onClick={() => navigate('/update-account')}
             className="rounded-2xl bg-blue-600 px-6 py-4 text-base font-semibold text-white transition hover:bg-blue-700"
           >
-            Update Information
+            Update User Account
           </button>
           <button
             onClick={() => navigate(returnPath)}

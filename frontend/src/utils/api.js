@@ -145,16 +145,10 @@ async function updateElection(electionId, data) {
   })
 }
 
-async function activateElection(electionId) {
-  return request(`/elections/${electionId}/activate`, {
-    method: 'PATCH',
-  })
-}
-
-async function extendElectionDeadline(electionId, newEndDate) {
+async function extendElectionDeadline(electionId, newEndDate, title) {
   return request(`/elections/${electionId}/extend-deadline`, {
     method: 'PATCH',
-    data: { new_end_date: newEndDate },
+    data: { new_end_date: newEndDate, ...(title !== undefined ? { title } : {}) },
   })
 }
 
@@ -189,12 +183,6 @@ async function createElection(data) {
   return request('/elections', {
     method: 'POST',
     data,
-  })
-}
-
-async function deleteElection(electionId) {
-  return request(`/elections/${electionId}`, {
-    method: 'DELETE',
   })
 }
 
@@ -258,8 +246,6 @@ export {
   updateElection,
   createElectionDraft,
   createElection,
-  deleteElection,
-  activateElection,
   extendElectionDeadline,
   submitVote,
   getAdminStats,
