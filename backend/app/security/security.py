@@ -70,23 +70,23 @@ def require_system_admin(
 
     return current_user
 
-def require_teacher(
+def require_organizer(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role != UserRole.teacher:
+    if current_user.role != UserRole.organizer:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Teacher access required",
+            detail="Organizer access required",
         )
     return current_user
 
 
-def require_student(
+def require_voter(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role != UserRole.student:
+    if current_user.role != UserRole.voter:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Student access required",
+            detail="Voter access required",
         )
     return current_user

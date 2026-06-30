@@ -5,13 +5,13 @@ from pydantic import BaseModel, Field
 
 
 class AddElectionVoterRequest(BaseModel):
-    institution_id: str = Field(..., min_length=1)
+    external_id: str = Field(..., min_length=1)
 
 
 class ElectionVoterResponse(BaseModel):
     id: UUID
     election_id: UUID
-    student_id: UUID
+    voter_id: UUID
     eligibility_status: str
     voted_at: datetime | None = None
     created_at: datetime
@@ -23,10 +23,10 @@ class ElectionVoterResponse(BaseModel):
 class ElectionVoterDetailResponse(BaseModel):
     id: UUID
     election_id: UUID
-    student_id: UUID
-    student_institution_id: str
-    student_username: str
-    student_email: str
+    voter_id: UUID
+    voter_external_id: str
+    voter_username: str
+    voter_email: str
     eligibility_status: str
     voted_at: datetime | None = None
     created_at: datetime
