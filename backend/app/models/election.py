@@ -21,7 +21,7 @@ class Election(Base):
     __tablename__ = "elections"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    teacher_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organizer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     title = Column(String, nullable=False)
     description = Column(Text)
@@ -40,11 +40,11 @@ class Election(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    teacher = relationship("User", back_populates="elections")
+    organizer = relationship("User", back_populates="organized_elections")
 
     @property
-    def teacher_username(self):
-        return self.teacher.username if self.teacher else None
+    def organizer_username(self):
+        return self.organizer.username if self.organizer else None
     candidates = relationship("Candidate", back_populates="election", cascade="all, delete-orphan")
     election_voters = relationship("ElectionVoter", back_populates="election", cascade="all, delete-orphan")
     ballots = relationship("Ballot", back_populates="election", cascade="all, delete-orphan")
