@@ -14,8 +14,8 @@ router = APIRouter(prefix="/admin/stats", tags=["Admin Stats"])
 
 
 class AdminStatsResponse(BaseModel):
-    total_students: int
-    total_teachers: int
+    total_voters: int
+    total_organizers: int
     total_admins: int
     active_elections: int
     total_votes_cast: int
@@ -28,8 +28,8 @@ def getAdminStats(
     db: Session = Depends(get_db),
     _: User = Depends(require_system_admin),
 ):
-    total_students = db.query(User).filter(User.role == UserRole.student).count()
-    total_teachers = db.query(User).filter(User.role == UserRole.teacher).count()
+    total_voters = db.query(User).filter(User.role == UserRole.voter).count()
+    total_organizers = db.query(User).filter(User.role == UserRole.organizer).count()
     total_admins = db.query(User).filter(User.role == UserRole.system_admin).count()
 
     active_elections = (
@@ -53,8 +53,8 @@ def getAdminStats(
     )
 
     return AdminStatsResponse(
-        total_students=total_students,
-        total_teachers=total_teachers,
+        total_voters=total_voters,
+        total_organizers=total_organizers,
         total_admins=total_admins,
         active_elections=active_elections,
         total_votes_cast=total_votes_cast,

@@ -11,7 +11,7 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
-from app.security.security import get_current_user, require_teacher
+from app.security.security import get_current_user, require_organizer
 from app.security.homomorphic import (
     generate_keypair,
     serialize_public_key,
@@ -34,10 +34,10 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 def createElectionDraft(
     payload: ElectionDraftCreate,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = Election(
-        teacher_id=current_teacher.id,
+        organizer_id=current_organizer.id,
         title=payload.title,
         description=payload.description,
         start_date=payload.start_date,
@@ -72,7 +72,7 @@ def createElectionDraft(
 def createElection(
     payload: ElectionCreate,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     if not payload.title or not payload.title.strip():
         raise HTTPException(
@@ -98,7 +98,7 @@ def createElection(
             detail="At least one candidate is required",
         )
 
-    if not payload.voter_institution_ids:
+    if not payload.eligible_voter_external_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one eligible voter is required",
@@ -107,7 +107,7 @@ def createElection(
     public_key, private_key = generate_keypair()
 
     election = Election(
-        teacher_id=current_teacher.id,
+        organizer_id=current_organizer.id,
         title=payload.title,
         description=payload.description,
         start_date=payload.start_date,
@@ -130,29 +130,29 @@ def createElection(
         )
         db.add(candidate)
 
-    for institution_id in payload.voter_institution_ids:
-        student = db.query(User).filter(User.institution_id == institution_id).first()
-        if not student:
+    for external_id in payload.eligible_voter_external_ids:
+        voter = db.query(User).filter(User.external_id == external_id).first()
+        if not voter:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Student '{institution_id}' not found",
+                detail=f"Voter '{external_id}' not found",
             )
-        if student.role != UserRole.student:
+        if voter.role != UserRole.voter:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"'{institution_id}' is not a student account",
+                detail=f"'{external_id}' is not a voter account",
             )
-        if student.status != UserStatus.active:
+        if voter.status != UserStatus.active:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Student '{institution_id}' is not active",
+                detail=f"Voter '{external_id}' is not active",
             )
         db.add(ElectionVoter(
             election_id=election.id,
-            student_id=student.id,
+            voter_id=voter.id,
             eligibility_status=EligibilityStatus.eligible,
         ))
 
@@ -181,13 +181,13 @@ def getActiveElections(
         .filter(Election.end_date >= now_sgt())
     )
 
-    if current_user.role == UserRole.teacher:
-        query = query.filter(Election.teacher_id == current_user.id)
+    if current_user.role == UserRole.organizer:
+        query = query.filter(Election.organizer_id == current_user.id)
 
-    elif current_user.role == UserRole.student:
+    elif current_user.role == UserRole.voter:
         query = (
             query.join(ElectionVoter, ElectionVoter.election_id == Election.id)
-            .filter(ElectionVoter.student_id == current_user.id)
+            .filter(ElectionVoter.voter_id == current_user.id)
             .filter(ElectionVoter.eligibility_status == EligibilityStatus.eligible)
         )
 
@@ -224,13 +224,13 @@ def getElectionHistory(
         )
     )
 
-    if current_user.role == UserRole.teacher:
-        query = query.filter(Election.teacher_id == current_user.id)
+    if current_user.role == UserRole.organizer:
+        query = query.filter(Election.organizer_id == current_user.id)
 
-    elif current_user.role == UserRole.student:
+    elif current_user.role == UserRole.voter:
         query = (
             query.join(ElectionVoter, ElectionVoter.election_id == Election.id)
-            .filter(ElectionVoter.student_id == current_user.id)
+            .filter(ElectionVoter.voter_id == current_user.id)
         )
 
     if search:
@@ -246,13 +246,13 @@ def getElectionHistory(
 def getElectionDrafts(
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     query = (
         db.query(Election)
         .options(joinedload(Election.candidates))
         .filter(Election.status == ElectionStatus.draft)
-        .filter(Election.teacher_id == current_teacher.id)
+        .filter(Election.organizer_id == current_organizer.id)
     )
 
     if search:
@@ -268,7 +268,7 @@ def getElectionDetails(
 ):
     election = (
         db.query(Election)
-        .options(joinedload(Election.candidates), joinedload(Election.teacher))
+        .options(joinedload(Election.candidates), joinedload(Election.organizer))
         .filter(Election.id == election_id)
         .first()
     )
@@ -279,19 +279,19 @@ def getElectionDetails(
             detail="Election not found",
         )
 
-    if current_user.role == UserRole.teacher:
-        if election.teacher_id != current_user.id:
+    if current_user.role == UserRole.organizer:
+        if election.organizer_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only view elections that you created",
             )
 
-    elif current_user.role == UserRole.student:
+    elif current_user.role == UserRole.voter:
         voter_record = (
             db.query(ElectionVoter)
             .filter(
                 ElectionVoter.election_id == election.id,
-                ElectionVoter.student_id == current_user.id,
+                ElectionVoter.voter_id == current_user.id,
             )
             .first()
         )
@@ -309,7 +309,7 @@ def updateElection(
     election_id: UUID,
     payload: ElectionUpdate,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = (
         db.query(Election)
@@ -324,7 +324,7 @@ def updateElection(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only update elections that you created",
@@ -389,7 +389,7 @@ def updateElection(
 def deleteElection(
     election_id: UUID,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = (
         db.query(Election)
@@ -403,7 +403,7 @@ def deleteElection(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only delete elections that you created",
@@ -424,7 +424,7 @@ def extendElectionDeadline(
     election_id: UUID,
     payload: ExtendDeadlineRequest,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = (
         db.query(Election)
@@ -439,7 +439,7 @@ def extendElectionDeadline(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only extend elections that you created",
@@ -476,7 +476,7 @@ def addEligibleVoter(
     election_id: UUID,
     payload: AddElectionVoterRequest,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = db.query(Election).filter(Election.id == election_id).first()
 
@@ -486,7 +486,7 @@ def addEligibleVoter(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only add voters to elections that you created",
@@ -498,35 +498,35 @@ def addEligibleVoter(
             detail="Voters can only be added while the election is in draft status",
         )
 
-    student = (
+    voter = (
         db.query(User)
-        .filter(User.institution_id == payload.institution_id)
+        .filter(User.external_id == payload.external_id)
         .first()
     )
 
-    if not student:
+    if not voter:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student not found",
+            detail="Voter not found",
         )
 
-    if student.role != UserRole.student:
+    if voter.role != UserRole.voter:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only student accounts can be added as voters",
+            detail="Only voter accounts can be added as voters",
         )
 
-    if student.status != UserStatus.active:
+    if voter.status != UserStatus.active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only active students can be added as voters",
+            detail="Only active voters can be added as voters",
         )
 
     existing_voter = (
         db.query(ElectionVoter)
         .filter(
             ElectionVoter.election_id == election.id,
-            ElectionVoter.student_id == student.id,
+            ElectionVoter.voter_id == voter.id,
         )
         .first()
     )
@@ -534,12 +534,12 @@ def addEligibleVoter(
     if existing_voter:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student is already added as an eligible voter for this election",
+            detail="Voter is already added as an eligible voter for this election",
         )
 
     election_voter = ElectionVoter(
         election_id=election.id,
-        student_id=student.id,
+        voter_id=voter.id,
         eligibility_status=EligibilityStatus.eligible,
     )
 
@@ -552,7 +552,7 @@ def addEligibleVoter(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student is already added as an eligible voter for this election",
+            detail="Voter is already added as an eligible voter for this election",
         )
 
     return election_voter
@@ -564,7 +564,7 @@ def addEligibleVoter(
 def getEligibleVoters(
     election_id: UUID,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = db.query(Election).filter(Election.id == election_id).first()
 
@@ -574,7 +574,7 @@ def getEligibleVoters(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view voters for elections that you created",
@@ -582,7 +582,7 @@ def getEligibleVoters(
 
     voter_records = (
         db.query(ElectionVoter, User)
-        .join(User, ElectionVoter.student_id == User.id)
+        .join(User, ElectionVoter.voter_id == User.id)
         .filter(ElectionVoter.election_id == election.id)
         .order_by(User.username.asc())
         .all()
@@ -590,24 +590,24 @@ def getEligibleVoters(
 
     return [
         ElectionVoterDetailResponse(
-            id=voter.id,
-            election_id=voter.election_id,
-            student_id=voter.student_id,
-            student_institution_id=student.institution_id,
-            student_username=student.username,
-            student_email=student.email,
-            eligibility_status=voter.eligibility_status.value,
-            voted_at=voter.voted_at,
-            created_at=voter.created_at,
+            id=election_voter.id,
+            election_id=election_voter.election_id,
+            voter_id=election_voter.voter_id,
+            voter_external_id=voter.external_id,
+            voter_username=voter.username,
+            voter_email=voter.email,
+            eligibility_status=election_voter.eligibility_status.value,
+            voted_at=election_voter.voted_at,
+            created_at=election_voter.created_at,
         )
-        for voter, student in voter_records
+        for election_voter, voter in voter_records
     ]
 
 @router.patch("/{election_id}/complete", response_model=ElectionResponse)
 def completeElection(
     election_id: UUID,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = (
         db.query(Election)
@@ -622,7 +622,7 @@ def completeElection(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only complete elections that you created",
@@ -645,7 +645,7 @@ def completeElection(
 def activateElection(
     election_id: UUID,
     db: Session = Depends(get_db),
-    current_teacher: User = Depends(require_teacher),
+    current_organizer: User = Depends(require_organizer),
 ):
     election = (
         db.query(Election)
@@ -660,7 +660,7 @@ def activateElection(
             detail="Election not found",
         )
 
-    if election.teacher_id != current_teacher.id:
+    if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only activate elections that you created",

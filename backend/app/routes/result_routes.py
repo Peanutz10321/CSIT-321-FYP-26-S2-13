@@ -50,18 +50,18 @@ def getElectionResults(
             detail="Election not found",
         )
 
-    if current_user.role == UserRole.teacher and election.teacher_id != current_user.id:
+    if current_user.role == UserRole.organizer and election.organizer_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view results for elections that you created",
         )
 
-    if current_user.role == UserRole.student:
+    if current_user.role == UserRole.voter:
         voter_record = (
             db.query(ElectionVoter)
             .filter(
                 ElectionVoter.election_id == election.id,
-                ElectionVoter.student_id == current_user.id,
+                ElectionVoter.voter_id == current_user.id,
             )
             .first()
         )
