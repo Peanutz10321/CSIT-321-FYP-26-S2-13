@@ -30,7 +30,7 @@ def register_user(role: str) -> dict:
 
     payload = {
         "role": role,
-        "institution_id": f"INST-{suffix}",
+        "external_id": f"INST-{suffix}",
         "username": f"{role}_{suffix}",
         "full_name": f"Test {role.title()}",
         "email": f"{role}_{suffix}@test.com",
@@ -54,29 +54,29 @@ def login_user(email: str, password: str = "testing123") -> str:
 
 
 @pytest.fixture
-def teacher_user():
-    return register_user("teacher")
+def organizer_user():
+    return register_user("organizer")
 
 
 @pytest.fixture
-def teacher_token(teacher_user):
-    return login_user(teacher_user["email"])
+def organizer_token(organizer_user):
+    return login_user(organizer_user["email"])
 
 
 @pytest.fixture
-def second_teacher_token():
-    teacher = register_user("teacher")
-    return login_user(teacher["email"])
+def second_organizer_token():
+    organizer = register_user("organizer")
+    return login_user(organizer["email"])
 
 
 @pytest.fixture
-def student_user():
-    return register_user("student")
+def voter_user():
+    return register_user("voter")
 
 
 @pytest.fixture
-def student_token(student_user):
-    return login_user(student_user["email"])
+def voter_token(voter_user):
+    return login_user(voter_user["email"])
 
 
 def valid_election_payload() -> dict:
@@ -104,11 +104,11 @@ def valid_election_payload() -> dict:
     }
 
 
-def create_election_as_teacher(teacher_token: str) -> dict:
+def create_election_as_organizer(organizer_token: str) -> dict:
     response = client.post(
         f"{ELECTION_BASE}/draft",
         json=valid_election_payload(),
-        headers=auth_header(teacher_token),
+        headers=auth_header(organizer_token),
     )
 
     assert response.status_code == 201, response.text
@@ -126,29 +126,29 @@ def set_election_status(election_id: str, status: ElectionStatus):
         db.close()
 
 
-def add_student_to_election(teacher_token: str, election_id: str, student_user: dict):
+def add_voter_to_election(organizer_token: str, election_id: str, voter_user: dict):
     response = client.post(
         f"{ELECTION_BASE}/{election_id}/voters",
-        json={"institution_id": student_user["institution_id"]},
-        headers=auth_header(teacher_token),
+        json={"external_id": voter_user["external_id"]},
+        headers=auth_header(organizer_token),
     )
 
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def activate_election(teacher_token: str, election_id: str):
+def activate_election(organizer_token: str, election_id: str):
     response = client.patch(
         f"{ELECTION_BASE}/{election_id}/activate",
-        headers=auth_header(teacher_token),
+        headers=auth_header(organizer_token),
     )
     assert response.status_code == 200, response.text
 
 
-def prepare_completed_election_with_vote(teacher_token, student_user, student_token):
-    election = create_election_as_teacher(teacher_token)
-    add_student_to_election(teacher_token, election["id"], student_user)
-    activate_election(teacher_token, election["id"])
+def prepare_completed_election_with_vote(organizer_token, voter_user, voter_token):
+    election = create_election_as_organizer(organizer_token)
+    add_voter_to_election(organizer_token, election["id"], voter_user)
+    activate_election(organizer_token, election["id"])
 
     candidate_id = election["candidates"][0]["id"]
 
@@ -158,7 +158,7 @@ def prepare_completed_election_with_vote(teacher_token, student_user, student_to
             "election_id": election["id"],
             "candidate_id": candidate_id,
         },
-        headers=auth_header(student_token),
+        headers=auth_header(voter_token),
     )
 
     assert vote_response.status_code == 201, vote_response.text
@@ -169,21 +169,21 @@ def prepare_completed_election_with_vote(teacher_token, student_user, student_to
 
 
 class TestElectionResults:
-    def test_teacher_can_view_completed_election_results(
+    def test_organizer_can_view_completed_election_results(
         self,
-        teacher_token,
-        student_user,
-        student_token,
+        organizer_token,
+        voter_user,
+        voter_token,
     ):
         election, voted_candidate_id = prepare_completed_election_with_vote(
-            teacher_token,
-            student_user,
-            student_token,
+            organizer_token,
+            voter_user,
+            voter_token,
         )
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -200,21 +200,21 @@ class TestElectionResults:
 
         assert voted_candidate_result["total_votes"] == 1
 
-    def test_student_can_view_completed_election_results(
+    def test_voter_can_view_completed_election_results(
         self,
-        teacher_token,
-        student_user,
-        student_token,
+        organizer_token,
+        voter_user,
+        voter_token,
     ):
         election, _ = prepare_completed_election_with_vote(
-            teacher_token,
-            student_user,
-            student_token,
+            organizer_token,
+            voter_user,
+            voter_token,
         )
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 200, response.text
@@ -222,65 +222,65 @@ class TestElectionResults:
 
     def test_results_not_available_for_active_election(
         self,
-        teacher_token,
-        student_user,
-        student_token,
+        organizer_token,
+        voter_user,
+        voter_token,
     ):
-        election = create_election_as_teacher(teacher_token)
-        add_student_to_election(teacher_token, election["id"], student_user)
+        election = create_election_as_organizer(organizer_token)
+        add_voter_to_election(organizer_token, election["id"], voter_user)
         set_election_status(election["id"], ElectionStatus.active)
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
         assert "progress" in response.json()["detail"].lower() or "completed" in response.json()["detail"].lower()
 
-    def test_teacher_cannot_view_other_teachers_results(
+    def test_organizer_cannot_view_other_organizers_results(
         self,
-        teacher_token,
-        second_teacher_token,
-        student_user,
-        student_token,
+        organizer_token,
+        second_organizer_token,
+        voter_user,
+        voter_token,
     ):
         election, _ = prepare_completed_election_with_vote(
-            teacher_token,
-            student_user,
-            student_token,
+            organizer_token,
+            voter_user,
+            voter_token,
         )
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(second_teacher_token),
+            headers=auth_header(second_organizer_token),
         )
 
         assert response.status_code == 403
 
-    def test_missing_election_results_return_404(self, teacher_token):
+    def test_missing_election_results_return_404(self, organizer_token):
         fake_id = uuid4()
 
         response = client.get(
             f"{RESULT_BASE}/elections/{fake_id}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 404
 
-    def test_ineligible_student_cannot_view_results(
+    def test_ineligible_voter_cannot_view_results(
         self,
-        teacher_token,
-        student_user,
-        student_token,
+        organizer_token,
+        voter_user,
+        voter_token,
     ):
         election, _ = prepare_completed_election_with_vote(
-            teacher_token,
-            student_user,
-            student_token,
+            organizer_token,
+            voter_user,
+            voter_token,
         )
 
-        outsider = register_user("student")
+        outsider = register_user("voter")
         outsider_token = login_user(outsider["email"])
 
         response = client.get(
@@ -290,8 +290,8 @@ class TestElectionResults:
 
         assert response.status_code == 403
 
-    def test_draft_past_end_date_has_no_results(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_draft_past_end_date_has_no_results(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
 
         db = SessionLocal()
         try:
@@ -303,20 +303,20 @@ class TestElectionResults:
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
 
-    def test_tie_reports_no_single_winner(self, teacher_token, student_user, student_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_tie_reports_no_single_winner(self, organizer_token, voter_user, voter_token):
+        election = create_election_as_organizer(organizer_token)
 
-        second_student = register_user("student")
-        second_student_token = login_user(second_student["email"])
+        second_voter = register_user("voter")
+        second_voter_token = login_user(second_voter["email"])
 
-        add_student_to_election(teacher_token, election["id"], student_user)
-        add_student_to_election(teacher_token, election["id"], second_student)
-        activate_election(teacher_token, election["id"])
+        add_voter_to_election(organizer_token, election["id"], voter_user)
+        add_voter_to_election(organizer_token, election["id"], second_voter)
+        activate_election(organizer_token, election["id"])
 
         candidate_one = election["candidates"][0]["id"]
         candidate_two = election["candidates"][1]["id"]
@@ -324,14 +324,14 @@ class TestElectionResults:
         first_vote = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_one},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
         assert first_vote.status_code == 201, first_vote.text
 
         second_vote = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_two},
-            headers=auth_header(second_student_token),
+            headers=auth_header(second_voter_token),
         )
         assert second_vote.status_code == 201, second_vote.text
 
@@ -339,7 +339,7 @@ class TestElectionResults:
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text

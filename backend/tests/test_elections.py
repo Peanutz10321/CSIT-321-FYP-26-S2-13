@@ -24,7 +24,7 @@ def register_user(role: str):
 
     payload = {
         "role": role,
-        "institution_id": f"INST-{suffix}",
+        "external_id": f"INST-{suffix}",
         "username": f"{role}_{suffix}",
         "full_name": f"Test {role.title()}",
         "email": f"{role}_{suffix}@test.com",
@@ -57,19 +57,19 @@ def auth_header(token: str):
 
 
 @pytest.fixture
-def teacher_token():
-    teacher = register_user("teacher")
-    return login_user(teacher["email"])
+def organizer_token():
+    organizer = register_user("organizer")
+    return login_user(organizer["email"])
 
 
 @pytest.fixture
-def student_token():
-    student = register_user("student")
-    return login_user(student["email"])
+def voter_token():
+    voter = register_user("voter")
+    return login_user(voter["email"])
 
 @pytest.fixture
-def student_user():
-    return register_user("student")
+def voter_user():
+    return register_user("voter")
 
 
 def valid_election_payload():
@@ -97,11 +97,11 @@ def valid_election_payload():
     }
 
 
-def create_election_as_teacher(teacher_token: str):
+def create_election_as_organizer(organizer_token: str):
     response = client.post(
         f"{ELECTION_BASE}/draft",
         json=valid_election_payload(),
-        headers=auth_header(teacher_token),
+        headers=auth_header(organizer_token),
     )
 
     assert response.status_code == 201, response.text
@@ -121,11 +121,11 @@ def set_election_status(election_id: str, status: ElectionStatus):
 
 
 class TestCreateElection:
-    def test_teacher_can_create_draft_election_with_candidates(self, teacher_token):
+    def test_organizer_can_create_draft_election_with_candidates(self, organizer_token):
         response = client.post(
             f"{ELECTION_BASE}/draft",
             json=valid_election_payload(),
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 201, response.text
@@ -135,14 +135,14 @@ class TestCreateElection:
         assert data["status"] == "draft"
         assert len(data["candidates"]) == 2
 
-    def test_teacher_can_create_active_election_with_voters(self, teacher_token, student_user):
+    def test_organizer_can_create_active_election_with_voters(self, organizer_token, voter_user):
         payload = valid_election_payload()
-        payload["voter_institution_ids"] = [student_user["institution_id"]]
+        payload["eligible_voter_external_ids"] = [voter_user["external_id"]]
 
         response = client.post(
             ELECTION_BASE,
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 201, response.text
@@ -151,39 +151,39 @@ class TestCreateElection:
         assert data["status"] == "active"
         assert len(data["candidates"]) == 2
 
-    def test_create_active_election_requires_eligible_voter(self, teacher_token):
+    def test_create_active_election_requires_eligible_voter(self, organizer_token):
         response = client.post(
             ELECTION_BASE,
             json=valid_election_payload(),
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
         assert "eligible voter" in response.json()["detail"].lower()
 
-    def test_student_cannot_create_election(self, student_token):
+    def test_voter_cannot_create_election(self, voter_token):
         response = client.post(
             ELECTION_BASE,
             json=valid_election_payload(),
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 403
 
-    def test_create_election_requires_candidates(self, teacher_token):
+    def test_create_election_requires_candidates(self, organizer_token):
         payload = valid_election_payload()
         payload["candidates"] = []
 
         response = client.post(
             ELECTION_BASE,
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
         assert "candidate" in response.json()["detail"].lower()
 
-    def test_create_election_rejects_invalid_date_range(self, teacher_token):
+    def test_create_election_rejects_invalid_date_range(self, organizer_token):
         now = datetime.utcnow()
 
         payload = valid_election_payload()
@@ -193,7 +193,7 @@ class TestCreateElection:
         response = client.post(
             ELECTION_BASE,
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
@@ -201,12 +201,12 @@ class TestCreateElection:
 
 
 class TestViewElection:
-    def test_can_view_election_details(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_can_view_election_details(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
 
         response = client.get(
             f"{ELECTION_BASE}/{election['id']}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -215,25 +215,25 @@ class TestViewElection:
         assert data["id"] == election["id"]
         assert len(data["candidates"]) == 2
 
-    def test_view_missing_election_returns_404(self, teacher_token):
+    def test_view_missing_election_returns_404(self, organizer_token):
         fake_id = uuid4()
 
         response = client.get(
             f"{ELECTION_BASE}/{fake_id}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 404
 
 
 class TestElectionLists:
-    def test_can_view_active_election_list(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_can_view_active_election_list(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         response = client.get(
             f"{ELECTION_BASE}/active",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -243,15 +243,15 @@ class TestElectionLists:
 
         assert election["id"] in election_ids
 
-    def test_can_search_active_election_list(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_can_search_active_election_list(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         search_term = election["title"][:8]
 
         response = client.get(
             f"{ELECTION_BASE}/active?search={search_term}",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -259,13 +259,13 @@ class TestElectionLists:
         data = response.json()
         assert any(search_term.lower() in item["title"].lower() for item in data)
 
-    def test_can_view_election_history(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_can_view_election_history(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.completed)
 
         response = client.get(
             f"{ELECTION_BASE}/history",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -277,8 +277,8 @@ class TestElectionLists:
 
 
 class TestUpdateElection:
-    def test_teacher_can_update_own_draft_election(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_organizer_can_update_own_draft_election(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
 
         payload = {
             "title": "Updated Election Title",
@@ -296,7 +296,7 @@ class TestUpdateElection:
         response = client.put(
             f"{ELECTION_BASE}/{election['id']}",
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -305,8 +305,8 @@ class TestUpdateElection:
         assert data["title"] == "Updated Election Title"
         assert len(data["candidates"]) == 1
 
-    def test_teacher_cannot_fully_update_active_election(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_organizer_cannot_fully_update_active_election(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         payload = {
@@ -316,7 +316,7 @@ class TestUpdateElection:
         response = client.put(
             f"{ELECTION_BASE}/{election['id']}",
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
@@ -324,8 +324,8 @@ class TestUpdateElection:
 
 
 class TestExtendDeadline:
-    def test_teacher_can_extend_active_election_deadline(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_organizer_can_extend_active_election_deadline(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         new_end_date = datetime.utcnow() + timedelta(days=2)
@@ -333,7 +333,7 @@ class TestExtendDeadline:
         response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/extend-deadline",
             json={"new_end_date": new_end_date.isoformat()},
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
@@ -341,8 +341,8 @@ class TestExtendDeadline:
         data = response.json()
         assert data["id"] == election["id"]
 
-    def test_cannot_extend_deadline_to_earlier_date(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_cannot_extend_deadline_to_earlier_date(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         old_end_date = datetime.utcnow()
@@ -350,72 +350,72 @@ class TestExtendDeadline:
         response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/extend-deadline",
             json={"new_end_date": old_end_date.isoformat()},
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
         assert "earlier" in response.json()["detail"].lower()
 
 class TestElectionStatusTransitions:
-    def test_teacher_can_activate_own_draft_election(self, teacher_token, student_user):
-        election = create_election_as_teacher(teacher_token)
+    def test_organizer_can_activate_own_draft_election(self, organizer_token, voter_user):
+        election = create_election_as_organizer(organizer_token)
 
         add_response = client.post(
             f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"institution_id": student_user["institution_id"]},
-            headers=auth_header(teacher_token),
+            json={"external_id": voter_user["external_id"]},
+            headers=auth_header(organizer_token),
         )
         assert add_response.status_code == 201, add_response.text
 
         response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 200, response.text
         assert response.json()["status"] == "active"
 
-    def test_cannot_activate_without_eligible_voter(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_cannot_activate_without_eligible_voter(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
 
         response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
         assert "eligible voter" in response.json()["detail"].lower()
 
-    def test_teacher_can_complete_active_election(self, teacher_token, student_user):
-        election = create_election_as_teacher(teacher_token)
+    def test_organizer_can_complete_active_election(self, organizer_token, voter_user):
+        election = create_election_as_organizer(organizer_token)
 
         add_response = client.post(
             f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"institution_id": student_user["institution_id"]},
-            headers=auth_header(teacher_token),
+            json={"external_id": voter_user["external_id"]},
+            headers=auth_header(organizer_token),
         )
         assert add_response.status_code == 201, add_response.text
 
         activate_response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
         assert activate_response.status_code == 200, activate_response.text
 
         complete_response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/complete",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert complete_response.status_code == 200, complete_response.text
         assert complete_response.json()["status"] == "completed"
 
-    def test_cannot_complete_draft_election(self, teacher_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_cannot_complete_draft_election(self, organizer_token):
+        election = create_election_as_organizer(organizer_token)
 
         response = client.patch(
             f"{ELECTION_BASE}/{election['id']}/complete",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
@@ -433,33 +433,33 @@ def _expire_election(election_id: str):
 
 
 class TestElectionListFiltering:
-    def test_active_list_excludes_expired_elections(self, teacher_token, student_user):
-        election = create_election_as_teacher(teacher_token)
+    def test_active_list_excludes_expired_elections(self, organizer_token, voter_user):
+        election = create_election_as_organizer(organizer_token)
         client.post(
             f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"institution_id": student_user["institution_id"]},
-            headers=auth_header(teacher_token),
+            json={"external_id": voter_user["external_id"]},
+            headers=auth_header(organizer_token),
         )
         client.patch(
             f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
         _expire_election(election["id"])
 
-        response = client.get(f"{ELECTION_BASE}/active", headers=auth_header(teacher_token))
+        response = client.get(f"{ELECTION_BASE}/active", headers=auth_header(organizer_token))
 
         assert response.status_code == 200, response.text
         ids = [item["id"] for item in response.json()]
         assert election["id"] not in ids
 
-    def test_history_includes_completed_excludes_running(self, teacher_token):
-        completed = create_election_as_teacher(teacher_token)
+    def test_history_includes_completed_excludes_running(self, organizer_token):
+        completed = create_election_as_organizer(organizer_token)
         set_election_status(completed["id"], ElectionStatus.completed)
 
-        running = create_election_as_teacher(teacher_token)
+        running = create_election_as_organizer(organizer_token)
         set_election_status(running["id"], ElectionStatus.active)
 
-        response = client.get(f"{ELECTION_BASE}/history", headers=auth_header(teacher_token))
+        response = client.get(f"{ELECTION_BASE}/history", headers=auth_header(organizer_token))
 
         assert response.status_code == 200, response.text
         ids = [item["id"] for item in response.json()]
@@ -468,20 +468,20 @@ class TestElectionListFiltering:
 
 
 class TestDraftRelaxation:
-    def test_draft_save_with_no_candidates_succeeds(self, teacher_token):
+    def test_draft_save_with_no_candidates_succeeds(self, organizer_token):
         payload = valid_election_payload()
         payload["candidates"] = []
 
         response = client.post(
             f"{ELECTION_BASE}/draft",
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 201, response.text
         assert response.json()["status"] == "draft"
 
-    def test_draft_save_with_only_title_succeeds(self, teacher_token):
+    def test_draft_save_with_only_title_succeeds(self, organizer_token):
         payload = {
             "title": unique_text("Draft With Only Title"),
             "description": None,
@@ -492,7 +492,7 @@ class TestDraftRelaxation:
         response = client.post(
             f"{ELECTION_BASE}/draft",
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 201, response.text
@@ -500,25 +500,25 @@ class TestDraftRelaxation:
         assert data["status"] == "draft"
         assert data["end_date"] is None
 
-    def test_create_active_election_requires_end_date(self, teacher_token, student_user):
+    def test_create_active_election_requires_end_date(self, organizer_token, voter_user):
         payload = valid_election_payload()
-        payload["voter_institution_ids"] = [student_user["institution_id"]]
+        payload["eligible_voter_external_ids"] = [voter_user["external_id"]]
         payload.pop("end_date")
 
         response = client.post(
             ELECTION_BASE,
             json=payload,
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400
 
 
 class TestDateFilter:
-    def test_history_invalid_date_period_rejected(self, teacher_token):
+    def test_history_invalid_date_period_rejected(self, organizer_token):
         response = client.get(
             f"{ELECTION_BASE}/history?start_date=2030-01-01&end_date=2020-01-01",
-            headers=auth_header(teacher_token),
+            headers=auth_header(organizer_token),
         )
 
         assert response.status_code == 400

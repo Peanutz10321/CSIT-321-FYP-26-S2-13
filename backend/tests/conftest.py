@@ -63,7 +63,7 @@ def clean_test_records():
             WHERE election_id IN (
                 SELECT e.id
                 FROM elections e
-                JOIN users u ON u.id = e.teacher_id
+                JOIN users u ON u.id = e.organizer_id
                 WHERE u.email LIKE '%@test.com'
             )
         """))
@@ -73,13 +73,13 @@ def clean_test_records():
             WHERE election_id IN (
                 SELECT e.id
                 FROM elections e
-                JOIN users u ON u.id = e.teacher_id
+                JOIN users u ON u.id = e.organizer_id
                 WHERE u.email LIKE '%@test.com'
             )
             OR election_voter_id IN (
                 SELECT ev.id
                 FROM election_voters ev
-                JOIN users u ON u.id = ev.student_id
+                JOIN users u ON u.id = ev.voter_id
                 WHERE u.email LIKE '%@test.com'
             )
         """))
@@ -89,10 +89,10 @@ def clean_test_records():
             WHERE election_id IN (
                 SELECT e.id
                 FROM elections e
-                JOIN users u ON u.id = e.teacher_id
+                JOIN users u ON u.id = e.organizer_id
                 WHERE u.email LIKE '%@test.com'
             )
-            OR student_id IN (
+            OR voter_id IN (
                 SELECT id FROM users WHERE email LIKE '%@test.com'
             )
         """))
@@ -102,14 +102,14 @@ def clean_test_records():
             WHERE election_id IN (
                 SELECT e.id
                 FROM elections e
-                JOIN users u ON u.id = e.teacher_id
+                JOIN users u ON u.id = e.organizer_id
                 WHERE u.email LIKE '%@test.com'
             )
         """))
 
         db.execute(text("""
             DELETE FROM elections
-            WHERE teacher_id IN (
+            WHERE organizer_id IN (
                 SELECT id FROM users WHERE email LIKE '%@test.com'
             )
         """))

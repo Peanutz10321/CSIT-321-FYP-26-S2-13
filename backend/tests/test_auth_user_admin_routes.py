@@ -14,12 +14,12 @@ from app.security.password import hash_password
 
 def make_user(
     *,
-    role=UserRole.student,
+    role=UserRole.voter,
     status=UserStatus.active,
-    institution_id="S1234567",
-    username="student",
-    full_name="Student User",
-    email="student@test.com",
+    external_id="S1234567",
+    username="voter",
+    full_name="Voter User",
+    email="voter@test.com",
     password="password123",
 ):
     now = datetime.now(timezone.utc)
@@ -28,7 +28,7 @@ def make_user(
         id=uuid4(),
         role=role,
         status=status,
-        institution_id=institution_id,
+        external_id=external_id,
         username=username,
         full_name=full_name,
         email=email,
@@ -150,21 +150,21 @@ def client(fake_db):
     app.dependency_overrides.clear()
 
 
-def register_student(client):
+def register_voter(client):
     return client.post(
         "/auth/register",
         json={
-            "institution_id": "S1234567",
-            "username": "student",
-            "full_name": "Student User",
-            "email": "student@test.com",
+            "external_id": "S1234567",
+            "username": "voter",
+            "full_name": "Voter User",
+            "email": "voter@test.com",
             "password": "password123",
-            "role": "student",
+            "role": "voter",
         },
     )
 
 
-def login(client, email="student@test.com", password="password123"):
+def login(client, email="voter@test.com", password="password123"):
     return client.post(
         "/auth/login",
         json={
@@ -178,16 +178,16 @@ def auth_headers(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_register_student_success(client):
-    response = register_student(client)
+def test_register_voter_success(client):
+    response = register_voter(client)
 
     assert response.status_code == 201
 
     data = response.json()
 
-    assert data["role"] == "student"
+    assert data["role"] == "voter"
     assert data["status"] == "active"
-    assert data["email"] == "student@test.com"
+    assert data["email"] == "voter@test.com"
     assert "password" not in data
     assert "password_hash" not in data
 
@@ -196,7 +196,7 @@ def test_register_system_admin_is_rejected(client):
     response = client.post(
         "/auth/register",
         json={
-            "institution_id": "ADMIN001",
+            "external_id": "ADMIN001",
             "username": "admin",
             "full_name": "System Admin",
             "email": "admin@test.com",
@@ -209,8 +209,77 @@ def test_register_system_admin_is_rejected(client):
     assert response.json()["detail"] == "System admin accounts cannot be registered publicly"
 
 
+def test_register_accepts_voter_and_organizer_roles(client):
+    voter = client.post(
+        "/auth/register",
+        json={
+            "username": "voter_rt",
+            "email": "voter_rt@test.com",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+    assert voter.status_code == 201, voter.text
+    assert voter.json()["role"] == "voter"
+
+    organizer = client.post(
+        "/auth/register",
+        json={
+            "username": "organizer_rt",
+            "email": "organizer_rt@test.com",
+            "password": "password123",
+            "role": "organizer",
+        },
+    )
+    assert organizer.status_code == 201, organizer.text
+    assert organizer.json()["role"] == "organizer"
+
+
+def test_register_rejects_legacy_student_role(client):
+    """The old school-specific role strings must no longer be accepted."""
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "legacy_role",
+            "email": "legacy_role@test.com",
+            "password": "password123",
+            "role": "student",
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "voter" in detail or "organizer" in detail
+
+
+def test_generated_external_id_uses_role_prefix(client):
+    voter = client.post(
+        "/auth/register",
+        json={
+            "username": "prefix_voter",
+            "email": "prefix_voter@test.com",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+    assert voter.status_code == 201, voter.text
+    assert voter.json()["external_id"].startswith("VOTER-")
+
+    organizer = client.post(
+        "/auth/register",
+        json={
+            "username": "prefix_organizer",
+            "email": "prefix_organizer@test.com",
+            "password": "password123",
+            "role": "organizer",
+        },
+    )
+    assert organizer.status_code == 201, organizer.text
+    assert organizer.json()["external_id"].startswith("ORG-")
+
+
 def test_login_success(client):
-    register_student(client)
+    register_voter(client)
 
     response = login(client)
 
@@ -223,7 +292,7 @@ def test_login_success(client):
 
 
 def test_login_wrong_password_fails(client):
-    register_student(client)
+    register_voter(client)
 
     response = login(client, password="wrong-password")
 
@@ -232,18 +301,18 @@ def test_login_wrong_password_fails(client):
 
 
 def test_view_own_account(client):
-    register_student(client)
+    register_voter(client)
     login_response = login(client)
     token = login_response.json()["access_token"]
 
     response = client.get("/users/me", headers=auth_headers(token))
 
     assert response.status_code == 200
-    assert response.json()["email"] == "student@test.com"
+    assert response.json()["email"] == "voter@test.com"
 
 
 def test_update_own_account_and_login_with_new_password(client):
-    register_student(client)
+    register_voter(client)
     login_response = login(client)
     token = login_response.json()["access_token"]
 
@@ -251,33 +320,33 @@ def test_update_own_account_and_login_with_new_password(client):
         "/users/me",
         headers=auth_headers(token),
         json={
-            "username": "student_updated",
-            "full_name": "Student Updated",
-            "email": "student_updated@test.com",
+            "username": "voter_updated",
+            "full_name": "Voter Updated",
+            "email": "voter_updated@test.com",
             "password": "newpass123",
         },
     )
 
     assert update_response.status_code == 200
-    assert update_response.json()["email"] == "student_updated@test.com"
+    assert update_response.json()["email"] == "voter_updated@test.com"
 
     old_password_response = login(
         client,
-        email="student_updated@test.com",
+        email="voter_updated@test.com",
         password="password123",
     )
     assert old_password_response.status_code == 401
 
     new_password_response = login(
         client,
-        email="student_updated@test.com",
+        email="voter_updated@test.com",
         password="newpass123",
     )
     assert new_password_response.status_code == 200
 
 
-def test_student_cannot_access_admin_routes(client):
-    register_student(client)
+def test_voter_cannot_access_admin_routes(client):
+    register_voter(client)
     login_response = login(client)
     token = login_response.json()["access_token"]
 
@@ -288,23 +357,23 @@ def test_student_cannot_access_admin_routes(client):
 
 
 def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
-    student = make_user(
-        role=UserRole.student,
-        institution_id="S1234567",
-        username="student",
-        email="student@test.com",
+    voter = make_user(
+        role=UserRole.voter,
+        external_id="S1234567",
+        username="voter",
+        email="voter@test.com",
     )
 
     admin = make_user(
         role=UserRole.system_admin,
-        institution_id="ADMIN001",
+        external_id="ADMIN001",
         username="admin",
         full_name="System Admin",
         email="admin@test.com",
         password="admin123",
     )
 
-    fake_db.users.extend([student, admin])
+    fake_db.users.extend([voter, admin])
 
     login_response = login(client, email="admin@test.com", password="admin123")
     admin_token = login_response.json()["access_token"]
@@ -314,7 +383,7 @@ def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
     assert len(list_response.json()) == 1
 
     suspend_response = client.patch(
-        f"/admin/users/{student.id}/suspend",
+        f"/admin/users/{voter.id}/suspend",
         headers=auth_headers(admin_token),
     )
 
@@ -322,7 +391,7 @@ def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
     assert suspend_response.json()["status"] == "suspended"
 
     unsuspend_response = client.patch(
-        f"/admin/users/{student.id}/unsuspend",
+        f"/admin/users/{voter.id}/unsuspend",
         headers=auth_headers(admin_token),
     )
 
@@ -331,15 +400,15 @@ def test_admin_can_list_suspend_and_unsuspend_users(client, fake_db):
 
 
 def test_register_duplicate_username_is_rejected(client):
-    register_student(client)
+    register_voter(client)
 
     response = client.post(
         "/auth/register",
         json={
-            "username": "student",
+            "username": "voter",
             "email": "different@test.com",
             "password": "password123",
-            "role": "student",
+            "role": "voter",
         },
     )
 
@@ -350,7 +419,7 @@ def test_register_duplicate_username_is_rejected(client):
 def _admin_token(client, fake_db):
     admin = make_user(
         role=UserRole.system_admin,
-        institution_id="ADMIN001",
+        external_id="ADMIN001",
         username="admin",
         full_name="System Admin",
         email="admin@test.com",

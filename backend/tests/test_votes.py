@@ -29,7 +29,7 @@ def register_user(role: str) -> dict:
 
     payload = {
         "role": role,
-        "institution_id": f"INST-{suffix}",
+        "external_id": f"INST-{suffix}",
         "username": f"{role}_{suffix}",
         "full_name": f"Test {role.title()}",
         "email": f"{role}_{suffix}@test.com",
@@ -53,25 +53,25 @@ def login_user(email: str, password: str = "testing123") -> str:
 
 
 @pytest.fixture
-def teacher_token():
-    teacher = register_user("teacher")
-    return login_user(teacher["email"])
+def organizer_token():
+    organizer = register_user("organizer")
+    return login_user(organizer["email"])
 
 
 @pytest.fixture
-def student_user():
-    return register_user("student")
+def voter_user():
+    return register_user("voter")
 
 
 @pytest.fixture
-def student_token(student_user):
-    return login_user(student_user["email"])
+def voter_token(voter_user):
+    return login_user(voter_user["email"])
 
 
 @pytest.fixture
-def other_student_token():
-    student = register_user("student")
-    return login_user(student["email"])
+def other_voter_token():
+    voter = register_user("voter")
+    return login_user(voter["email"])
 
 
 def valid_election_payload() -> dict:
@@ -99,11 +99,11 @@ def valid_election_payload() -> dict:
     }
 
 
-def create_election_as_teacher(teacher_token: str) -> dict:
+def create_election_as_organizer(organizer_token: str) -> dict:
     response = client.post(
         f"{ELECTION_BASE}/draft",
         json=valid_election_payload(),
-        headers=auth_header(teacher_token),
+        headers=auth_header(organizer_token),
     )
 
     assert response.status_code == 201, response.text
@@ -121,35 +121,35 @@ def set_election_status(election_id: str, status: ElectionStatus):
         db.close()
 
 
-def add_student_to_election(teacher_token: str, election_id: str, student_user: dict):
+def add_voter_to_election(organizer_token: str, election_id: str, voter_user: dict):
     response = client.post(
         f"{ELECTION_BASE}/{election_id}/voters",
-        json={"institution_id": student_user["institution_id"]},
-        headers=auth_header(teacher_token),
+        json={"external_id": voter_user["external_id"]},
+        headers=auth_header(organizer_token),
     )
 
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def activate_election(teacher_token: str, election_id: str):
+def activate_election(organizer_token: str, election_id: str):
     response = client.patch(
         f"{ELECTION_BASE}/{election_id}/activate",
-        headers=auth_header(teacher_token),
+        headers=auth_header(organizer_token),
     )
     assert response.status_code == 200, response.text
 
 
-def prepare_active_election_with_student(teacher_token, student_user):
-    election = create_election_as_teacher(teacher_token)
-    add_student_to_election(teacher_token, election["id"], student_user)
-    activate_election(teacher_token, election["id"])
+def prepare_active_election_with_voter(organizer_token, voter_user):
+    election = create_election_as_organizer(organizer_token)
+    add_voter_to_election(organizer_token, election["id"], voter_user)
+    activate_election(organizer_token, election["id"])
     return election
 
 
 class TestCreateVote:
-    def test_student_can_vote_when_eligible(self, teacher_token, student_user, student_token):
-        election = prepare_active_election_with_student(teacher_token, student_user)
+    def test_voter_can_vote_when_eligible(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
         candidate_id = election["candidates"][0]["id"]
 
         response = client.post(
@@ -158,7 +158,7 @@ class TestCreateVote:
                 "election_id": election["id"],
                 "candidate_id": candidate_id,
             },
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 201, response.text
@@ -171,14 +171,14 @@ class TestCreateVote:
         parsed = json.loads(data["encrypted_vote"])
         assert set(parsed.keys()) == {c["id"] for c in election["candidates"]}
 
-    def test_student_cannot_vote_twice(self, teacher_token, student_user, student_token):
-        election = prepare_active_election_with_student(teacher_token, student_user)
+    def test_voter_cannot_vote_twice(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
         candidate_id = election["candidates"][0]["id"]
 
         first_response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert first_response.status_code == 201, first_response.text
@@ -186,14 +186,14 @@ class TestCreateVote:
         second_response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert second_response.status_code == 400
         assert "already" in second_response.json()["detail"].lower()
 
-    def test_ineligible_student_cannot_vote(self, teacher_token, other_student_token):
-        election = create_election_as_teacher(teacher_token)
+    def test_ineligible_voter_cannot_vote(self, organizer_token, other_voter_token):
+        election = create_election_as_organizer(organizer_token)
         set_election_status(election["id"], ElectionStatus.active)
 
         candidate_id = election["candidates"][0]["id"]
@@ -201,29 +201,29 @@ class TestCreateVote:
         response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(other_student_token),
+            headers=auth_header(other_voter_token),
         )
 
         assert response.status_code == 403
 
-    def test_student_cannot_vote_in_draft_election(self, teacher_token, student_user, student_token):
-        election = create_election_as_teacher(teacher_token)
-        add_student_to_election(teacher_token, election["id"], student_user)
+    def test_voter_cannot_vote_in_draft_election(self, organizer_token, voter_user, voter_token):
+        election = create_election_as_organizer(organizer_token)
+        add_voter_to_election(organizer_token, election["id"], voter_user)
 
         candidate_id = election["candidates"][0]["id"]
 
         response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 400
         assert "active" in response.json()["detail"].lower()
 
-    def test_candidate_must_belong_to_election(self, teacher_token, student_user, student_token):
-        election_1 = prepare_active_election_with_student(teacher_token, student_user)
-        election_2 = create_election_as_teacher(teacher_token)
+    def test_candidate_must_belong_to_election(self, organizer_token, voter_user, voter_token):
+        election_1 = prepare_active_election_with_voter(organizer_token, voter_user)
+        election_2 = create_election_as_organizer(organizer_token)
 
         wrong_candidate_id = election_2["candidates"][0]["id"]
 
@@ -233,7 +233,7 @@ class TestCreateVote:
                 "election_id": election_1["id"],
                 "candidate_id": wrong_candidate_id,
             },
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 400
@@ -241,21 +241,21 @@ class TestCreateVote:
 
 
 class TestVoteHistory:
-    def test_student_can_view_vote_history(self, teacher_token, student_user, student_token):
-        election = prepare_active_election_with_student(teacher_token, student_user)
+    def test_voter_can_view_vote_history(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
         candidate_id = election["candidates"][0]["id"]
 
         vote_response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert vote_response.status_code == 201, vote_response.text
 
         response = client.get(
             f"{VOTE_BASE}/history",
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 200, response.text
@@ -264,14 +264,14 @@ class TestVoteHistory:
         assert len(data) >= 1
         assert any(item["election_id"] == election["id"] for item in data)
 
-    def test_student_can_view_vote_details(self, teacher_token, student_user, student_token):
-        election = prepare_active_election_with_student(teacher_token, student_user)
+    def test_voter_can_view_vote_details(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
         candidate_id = election["candidates"][0]["id"]
 
         vote_response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert vote_response.status_code == 201, vote_response.text
@@ -280,26 +280,26 @@ class TestVoteHistory:
 
         response = client.get(
             f"{VOTE_BASE}/{vote_id}",
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 200, response.text
         assert response.json()["id"] == vote_id
 
-    def test_student_cannot_view_other_students_vote(
+    def test_voter_cannot_view_other_voters_vote(
         self,
-        teacher_token,
-        student_user,
-        student_token,
-        other_student_token,
+        organizer_token,
+        voter_user,
+        voter_token,
+        other_voter_token,
     ):
-        election = prepare_active_election_with_student(teacher_token, student_user)
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
         candidate_id = election["candidates"][0]["id"]
 
         vote_response = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert vote_response.status_code == 201, vote_response.text
@@ -308,15 +308,15 @@ class TestVoteHistory:
 
         response = client.get(
             f"{VOTE_BASE}/{vote_id}",
-            headers=auth_header(other_student_token),
+            headers=auth_header(other_voter_token),
         )
 
         assert response.status_code == 404
 
-    def test_vote_history_invalid_date_period_rejected(self, student_token):
+    def test_vote_history_invalid_date_period_rejected(self, voter_token):
         response = client.get(
             f"{VOTE_BASE}/history?start_date=2030-01-01&end_date=2020-01-01",
-            headers=auth_header(student_token),
+            headers=auth_header(voter_token),
         )
 
         assert response.status_code == 400
