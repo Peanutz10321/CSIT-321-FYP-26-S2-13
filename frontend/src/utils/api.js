@@ -217,7 +217,7 @@ function decodeJwt(token) {
 
   try {
     return JSON.parse(decoded)
-  } catch (error) {
+  } catch {
     return null
   }
 }
