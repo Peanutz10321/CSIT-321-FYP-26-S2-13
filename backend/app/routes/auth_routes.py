@@ -83,15 +83,15 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     # Generate external_id: VOTER-001 for voters, ORG-001 for organizers
     role_enum = UserRole(request.role)
     prefix = "VOTER" if role_enum == UserRole.voter else "ORG"
-    existing_ids = (
+    existing_external_ids = (
         db.query(User.external_id)
         .filter(User.role == role_enum)
         .all()
     )
     max_num = 0
-    for (iid,) in existing_ids:
+    for (existing_external_id,) in existing_external_ids:
         try:
-            num = int(iid.split("-")[1])
+            num = int(existing_external_id.split("-")[1])
             if num > max_num:
                 max_num = num
         except (IndexError, ValueError):
