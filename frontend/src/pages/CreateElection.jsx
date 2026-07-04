@@ -43,7 +43,7 @@ function CreateElection() {
       photo_url: null,
       display_order: index + 1,
     })),
-    voter_institution_ids: voters,
+    eligible_voter_external_ids: voters,
   })
 
   const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
@@ -55,7 +55,7 @@ function CreateElection() {
     setEndDate(draft.end_date ? draft.end_date.slice(0, 16) : '')
     try {
       const voters = await getEligibleVoters(draft.id)
-      setEligibleVotersText(voters.map((v) => v.student_institution_id).join(', '))
+      setEligibleVotersText(voters.map((v) => v.voter_external_id).join(', '))
     } catch {
       setEligibleVotersText('')
     }
@@ -90,7 +90,7 @@ function CreateElection() {
     setSaving(true)
     try {
       const election = await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
-      navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'teacher' } })
+      navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'organizer' } })
     } catch {
       alert('Missing field or invalid input detected. Please key in again.')
     } finally {
@@ -108,7 +108,7 @@ function CreateElection() {
         <div className="rounded-2xl border border-slate-600 bg-slate-800/80 shadow-lg md:rounded-sm md:border-2 md:border-slate-500">
 
           <div className="border-b border-slate-500 py-5">
-            <h2 className="text-center text-xl font-semibold text-slate-100">Create Election</h2>
+            <h2 className="text-center text-xl font-semibold text-slate-100">Create Voting Event</h2>
           </div>
 
           <div className="flex flex-col md:flex-row md:min-h-[480px]">
@@ -189,12 +189,12 @@ function CreateElection() {
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
-                  <span className={`${labelClass} sm:pt-3`}>Eligible Student Votes:</span>
+                  <span className={`${labelClass} sm:pt-3`}>Eligible Voter External IDs:</span>
                   <textarea
                     rows={3}
                     value={eligibleVotersText}
                     onChange={(e) => setEligibleVotersText(e.target.value)}
-                    placeholder="Comma or newline separated institution IDs"
+                    placeholder="Comma or newline separated external IDs"
                     className={`${inputClass} resize-none`}
                   />
                 </div>

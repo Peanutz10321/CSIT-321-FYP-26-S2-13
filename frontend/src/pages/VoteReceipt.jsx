@@ -64,8 +64,8 @@ function VoteReceipt() {
 
           <div className="space-y-5 text-sm text-slate-300">
             <p>
-              <span className="font-semibold text-slate-100">School ID: </span>
-              {currentUser?.institution_id ?? '—'}
+              <span className="font-semibold text-slate-100">External ID: </span>
+              {currentUser?.external_id ?? '—'}
             </p>
             <p>
               <span className="font-semibold text-slate-100">Election Title: </span>
@@ -89,7 +89,7 @@ function VoteReceipt() {
             </p>
             <p>
               <span className="font-semibold text-slate-100">Election Organizer: </span>
-              {election.teacher_username ?? '—'}
+              {election.organizer_username ?? '—'}
             </p>
             <p>
               <span className="font-semibold text-slate-100">Candidate Voted: </span>

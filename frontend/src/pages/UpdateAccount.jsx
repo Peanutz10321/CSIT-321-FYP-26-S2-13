@@ -80,7 +80,7 @@ function UpdateAccount() {
             </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-300">
-                {role === 'teacher' ? 'Teacher Email' : 'Student Email'}
+                {role === 'organizer' ? 'Organizer Email' : 'Voter Email'}
               </label>
               <input
                 id="email"

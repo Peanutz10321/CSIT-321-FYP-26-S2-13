@@ -88,7 +88,7 @@ function ActiveElections() {
         </div>
 
         <button
-          onClick={() => navigate(role === 'teacher' ? '/teacher-dashboard' : '/student-dashboard')}
+          onClick={() => navigate(role === 'organizer' ? '/organizer-dashboard' : '/voter-dashboard')}
           className="rounded-2xl bg-slate-800 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 border border-slate-600"
         >
           Back to Dashboard

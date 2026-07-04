@@ -66,7 +66,7 @@ function CastVote() {
 
   if (!election || !currentUser) return null
 
-  const isStudent = currentUser.role === 'student'
+  const isVoter = currentUser.role === 'voter'
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
@@ -75,8 +75,8 @@ function CastVote() {
 
         <div className="space-y-6">
           <p className="text-sm text-slate-300">
-            <span className="font-semibold text-slate-100">School ID: </span>
-            {currentUser.institution_id}
+            <span className="font-semibold text-slate-100">External ID: </span>
+            {currentUser.external_id}
           </p>
 
           <div className="space-y-3">
@@ -90,18 +90,18 @@ function CastVote() {
                   type="checkbox"
                   checked={selectedCandidateId === candidate.id}
                   onChange={() => setSelectedCandidateId(candidate.id)}
-                  disabled={!isStudent}
+                  disabled={!isVoter}
                   className="h-4 w-4 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </label>
             ))}
           </div>
 
-          {!isStudent && (
-            <p className="text-xs text-slate-400">Voting is restricted to students.</p>
+          {!isVoter && (
+            <p className="text-xs text-slate-400">Voting is restricted to voters.</p>
           )}
 
-          {isStudent && (
+          {isVoter && (
             <div className="flex justify-center gap-4 pt-2">
               <button
                 type="button"

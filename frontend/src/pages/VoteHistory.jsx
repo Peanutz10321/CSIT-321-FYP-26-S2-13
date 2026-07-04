@@ -115,7 +115,7 @@ function VoteHistory() {
         </div>
 
         <button
-          onClick={() => navigate('/student-dashboard')}
+          onClick={() => navigate('/voter-dashboard')}
           className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
         >
           Back to Dashboard

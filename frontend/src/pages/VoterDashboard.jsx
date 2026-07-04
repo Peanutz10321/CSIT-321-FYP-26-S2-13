@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../utils/api.js'
 
-function TeacherDashboard() {
+function VoterDashboard() {
   const navigate = useNavigate()
   const [user, setUser] = useState(null)
 
@@ -23,7 +23,7 @@ function TeacherDashboard() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col gap-4 rounded-3xl bg-slate-800 p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Teacher'}</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Voter'}</h1>
           </div>
           <button
             onClick={() => { logout(); navigate('/login') }}
@@ -33,17 +33,28 @@ function TeacherDashboard() {
           </button>
         </header>
 
-        <main className="mt-10 grid grid-cols-2 gap-6">
+        <main className="mt-10 grid gap-6 grid-cols-2">
           {[
-            { label: 'View User Account', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/view-account', { state: { from: '/teacher-dashboard' } }) } },
-            { label: 'New Election', action: () => navigate('/create-election') },
-            { label: 'My Active Elections', action: () => navigate('/active-elections') },
-            { label: 'My Election History', action: () => { localStorage.setItem('backTo', '/teacher-dashboard'); navigate('/election-history', { state: { from: '/teacher-dashboard' } }) } },
-          ].map(({ label, action }) => (
+            'View User Account',
+            'My Active Elections',
+            'My Vote History',
+            'My Election History',
+          ].map((label) => (
             <button
               key={label}
-              onClick={action}
-              className="group rounded-3xl border border-slate-700 bg-slate-800 p-6 text-left shadow-sm transition hover:border-amber-500 hover:shadow-md"
+              onClick={() => {
+                if (label === 'View User Account') {
+                  localStorage.setItem('backTo', '/voter-dashboard')
+                  return navigate('/view-account', { state: { from: '/voter-dashboard' } })
+                }
+                if (label === 'My Active Elections') return navigate('/active-elections')
+                if (label === 'My Vote History') return navigate('/vote-history')
+                if (label === 'My Election History') {
+                  localStorage.setItem('backTo', '/voter-dashboard')
+                  return navigate('/election-history', { state: { from: '/voter-dashboard' } })
+                }
+              }}
+              className="group rounded-3xl border border-slate-700 bg-slate-800 p-6 text-left shadow-sm transition hover:border-blue-500 hover:shadow-md"
             >
               <div className="text-sm font-semibold text-slate-100">{label}</div>
               <p className="mt-3 text-sm text-slate-400">Click to view details</p>
@@ -55,4 +66,4 @@ function TeacherDashboard() {
   )
 }
 
-export default TeacherDashboard
+export default VoterDashboard

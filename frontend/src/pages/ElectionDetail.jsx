@@ -23,8 +23,8 @@ function ElectionDetail() {
 
     Promise.all([
       getElectionDetails(electionId),
-      role === 'teacher' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
-      role === 'student' && from === 'active' ? getVoteHistory().catch(() => []) : Promise.resolve([]),
+      role === 'organizer' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
+      role === 'voter' && from === 'active' ? getVoteHistory().catch(() => []) : Promise.resolve([]),
     ])
       .then(([electionData, votersData, voteHistory]) => {
         setElection(electionData)
@@ -62,7 +62,7 @@ function ElectionDetail() {
     )
   }
 
-  const isTeacherActive = role === 'teacher' && from === 'active'
+  const isOrganizerActive = role === 'organizer' && from === 'active'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -94,20 +94,20 @@ function ElectionDetail() {
               {election.end_date ? new Date(election.end_date).toLocaleDateString() : '—'}
             </p>
 
-            {isTeacherActive ? (
+            {isOrganizerActive ? (
               <p>
-                <span className="font-semibold text-slate-100">Eligible Student Voters: </span>
+                <span className="font-semibold text-slate-100">Eligible Voters: </span>
                 {eligibleCount !== null ? eligibleCount : '—'}
               </p>
             ) : (
               <p>
                 <span className="font-semibold text-slate-100">Election Organizer: </span>
-                {election.teacher_username ?? '—'}
+                {election.organizer_username ?? '—'}
               </p>
             )}
           </div>
 
-          {isTeacherActive && (
+          {isOrganizerActive && (
             <div className="mt-10 flex justify-center">
               <button
                 onClick={() => navigate(`/update-election/${election.id}`)}
@@ -118,7 +118,7 @@ function ElectionDetail() {
             </div>
           )}
 
-          {role === 'student' && from === 'active' && (
+          {role === 'voter' && from === 'active' && (
             <div className="mt-10 flex items-center justify-center gap-4">
               {existingVoteId ? (
                 <>

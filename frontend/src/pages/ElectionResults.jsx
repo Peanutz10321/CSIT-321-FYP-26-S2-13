@@ -6,7 +6,7 @@ function ElectionResults() {
   const navigate = useNavigate()
   const location = useLocation()
   const electionId = location.state?.electionId
-  const role = location.state?.role ?? 'student'
+  const role = location.state?.role ?? 'voter'
 
   const [election, setElection] = useState(null)
   const [results, setResults] = useState(null)
@@ -23,7 +23,7 @@ function ElectionResults() {
     Promise.all([
       getElectionDetails(electionId),
       getElectionResults(electionId).catch((err) => ({ _error: err.message })),
-      role === 'teacher' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
+      role === 'organizer' ? getEligibleVoters(electionId).catch(() => null) : Promise.resolve(null),
     ])
       .then(([electionData, resultsData, votersData]) => {
         setElection(electionData)
@@ -93,13 +93,13 @@ function ElectionResults() {
             <Row label="Total Votes Cast">
               {resultsError ? '—' : totalVotes}
             </Row>
-            {role === 'teacher' ? (
-              <Row label="Eligible Student Voters">
+            {role === 'organizer' ? (
+              <Row label="Eligible Voters">
                 {eligibleCount !== null ? eligibleCount : '—'}
               </Row>
             ) : (
               <Row label="Election Organizer">
-                {election.teacher_username ?? '—'}
+                {election.organizer_username ?? '—'}
               </Row>
             )}
             <Row label="Number Of Votes Per Candidate">

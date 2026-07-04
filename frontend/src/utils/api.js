@@ -126,8 +126,8 @@ async function addEligibleVoter(electionId, data) {
   })
 }
 
-async function addElectionVoter(electionId, institutionId) {
-  return addEligibleVoter(electionId, { institution_id: institutionId })
+async function addElectionVoter(electionId, externalId) {
+  return addEligibleVoter(electionId, { external_id: externalId })
 }
 
 async function getElectionDetails(electionId) {
