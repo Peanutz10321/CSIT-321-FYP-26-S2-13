@@ -20,7 +20,7 @@ function ViewAccount() {
       .catch(() => navigate('/login'))
   }, [navigate])
 
-  const roleLabel = user?.role === 'teacher' ? 'Teacher' : 'Student'
+  const roleLabel = user?.role === 'organizer' ? 'Organizer' : 'Voter'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -48,8 +48,8 @@ function ViewAccount() {
               {user?.full_name || 'Loading...'}
             </p>
             <p>
-              <span className="font-semibold text-slate-100">School ID: </span>
-              {user?.institution_id || 'Loading...'}
+              <span className="font-semibold text-slate-100">External ID: </span>
+              {user?.external_id || 'Loading...'}
             </p>
           </div>
         </div>

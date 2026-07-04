@@ -18,7 +18,7 @@ function ElectionHistory() {
   const navigate = useNavigate()
   const location = useLocation()
   const returnPath = location.state?.from || localStorage.getItem('backTo') || '/login'
-  const role = returnPath.includes('teacher') ? 'teacher' : 'student'
+  const role = returnPath.includes('organizer') ? 'organizer' : 'voter'
 
   useEffect(() => {
     setLoading(true)

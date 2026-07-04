@@ -20,7 +20,7 @@ class ElectionVoter(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     election_id = Column(UUID(as_uuid=True), ForeignKey("elections.id"), nullable=False)
-    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    voter_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     eligibility_status = Column(
         Enum(EligibilityStatus, name="eligibility_status"),
@@ -32,9 +32,9 @@ class ElectionVoter(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     election = relationship("Election", back_populates="election_voters")
-    student = relationship("User", back_populates="election_voter_records")
+    voter = relationship("User", back_populates="election_voter_records")
     ballot = relationship("Ballot", back_populates="election_voter", uselist=False)
 
     __table_args__ = (
-        UniqueConstraint("election_id", "student_id", name="uq_election_voters_election_student"),
+        UniqueConstraint("election_id", "voter_id", name="uq_election_voters_election_voter"),
     )

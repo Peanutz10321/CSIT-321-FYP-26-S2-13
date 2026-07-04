@@ -11,7 +11,7 @@ class UserResponse(BaseModel):
     id: UUID
     role: str
     status: str
-    institution_id: str
+    external_id: str
     username: str
     full_name: str | None = None
     email: EmailStr

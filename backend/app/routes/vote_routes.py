@@ -13,7 +13,7 @@ from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
 from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryResponse
-from app.security.security import require_student
+from app.security.security import require_voter
 from app.security.homomorphic import deserialize_public_key, encrypt_vote
 
 
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/votes", tags=["Votes"])
 def submitVote(
     payload: VoteCreate,
     db: Session = Depends(get_db),
-    current_student: User = Depends(require_student),
+    current_voter: User = Depends(require_voter),
 ):
     election = db.query(Election).filter(Election.id == payload.election_id).first()
 
@@ -68,7 +68,7 @@ def submitVote(
         db.query(ElectionVoter)
         .filter(
             ElectionVoter.election_id == payload.election_id,
-            ElectionVoter.student_id == current_student.id,
+            ElectionVoter.voter_id == current_voter.id,
         )
         .first()
     )
@@ -114,7 +114,7 @@ def submitVote(
     encrypted_vote = encrypt_vote(public_key, candidate_ids, str(payload.candidate_id))
 
     vote_hash = hashlib.sha256(
-        f"{payload.election_id}:{current_student.id}:{payload.candidate_id}:{now.isoformat()}".encode()
+        f"{payload.election_id}:{current_voter.id}:{payload.candidate_id}:{now.isoformat()}".encode()
     ).hexdigest()
 
     receipt_code = f"RCPT-{uuid.uuid4().hex[:12].upper()}"
@@ -144,7 +144,7 @@ def getVoteHistory(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_student: User = Depends(require_student),
+    current_voter: User = Depends(require_voter),
 ):
     if start_date and end_date and start_date > end_date:
         raise HTTPException(
@@ -156,7 +156,7 @@ def getVoteHistory(
         db.query(Ballot, Election)
         .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)
         .join(Election, Ballot.election_id == Election.id)
-        .filter(ElectionVoter.student_id == current_student.id)
+        .filter(ElectionVoter.voter_id == current_voter.id)
     )
 
     if search:
@@ -185,14 +185,14 @@ def getVoteHistory(
 def getVoteDetails(
     vote_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_student: User = Depends(require_student),
+    current_voter: User = Depends(require_voter),
 ):
     ballot = (
         db.query(Ballot)
         .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)
         .filter(
             Ballot.id == vote_id,
-            ElectionVoter.student_id == current_student.id,
+            ElectionVoter.voter_id == current_voter.id,
         )
         .first()
     )

@@ -23,10 +23,10 @@ function Login() {
       const payload = decodeJwt(token)
       const role = payload?.role
 
-      if (role === 'student') {
-        navigate('/student-dashboard')
-      } else if (role === 'teacher') {
-        navigate('/teacher-dashboard')
+      if (role === 'voter') {
+        navigate('/voter-dashboard')
+      } else if (role === 'organizer') {
+        navigate('/organizer-dashboard')
       } else if (role === 'system_admin') {
         navigate('/admin-dashboard')
       } else {

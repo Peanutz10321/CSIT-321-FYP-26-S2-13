@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import StudentDashboard from './pages/StudentDashboard'
-import TeacherDashboard from './pages/TeacherDashboard'
+import VoterDashboard from './pages/VoterDashboard'
+import OrganizerDashboard from './pages/OrganizerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import ActiveElections from './pages/ActiveElections'
 import CastVote from './pages/CastVote'
@@ -25,8 +25,8 @@ function App() {
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/student-dashboard" element={<StudentDashboard />} />
-        <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+        <Route path="/voter-dashboard" element={<VoterDashboard />} />
+        <Route path="/organizer-dashboard" element={<OrganizerDashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
         <Route path="/active-elections" element={<ActiveElections />} />
         <Route path="/cast-vote" element={<CastVote />} />

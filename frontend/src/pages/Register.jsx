@@ -4,7 +4,7 @@ import { registerUser, loginUser, decodeJwt } from '../utils/api.js'
 
 function Register() {
   const navigate = useNavigate()
-  const [role, setRole] = useState('student')
+  const [role, setRole] = useState('voter')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -30,10 +30,10 @@ function Register() {
       const decoded = decodeJwt(token)
       const userRole = decoded?.role
 
-      if (userRole === 'student') {
-        navigate('/student-dashboard')
-      } else if (userRole === 'teacher') {
-        navigate('/teacher-dashboard')
+      if (userRole === 'voter') {
+        navigate('/voter-dashboard')
+      } else if (userRole === 'organizer') {
+        navigate('/organizer-dashboard')
       } else {
         navigate('/login')
       }
@@ -101,8 +101,8 @@ function Register() {
               onChange={(event) => setRole(event.target.value)}
               className="block h-14 w-full rounded-none border-2 border-slate-500 bg-slate-900/70 px-4 text-slate-100 outline-none transition focus:border-blue-400"
             >
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
+              <option value="voter">Voter</option>
+              <option value="organizer">Organizer</option>
             </select>
           </div>
 

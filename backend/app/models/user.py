@@ -9,8 +9,8 @@ from app.database import Base
 
 
 class UserRole(str, enum.Enum):
-    student = "student"
-    teacher = "teacher"
+    voter = "voter"
+    organizer = "organizer"
     system_admin = "system_admin"
 
 
@@ -28,7 +28,7 @@ class User(Base):
     role = Column(Enum(UserRole, name="user_role"), nullable=False)
     status = Column(Enum(UserStatus, name="user_status"), nullable=False, default=UserStatus.active)
 
-    institution_id = Column(String, nullable=False, unique=True)
+    external_id = Column(String, nullable=False, unique=True)
     username = Column(String, nullable=False, unique=True)
     full_name = Column(String, nullable=True)
     email = Column(String, nullable=False, unique=True)
@@ -37,6 +37,6 @@ class User(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    elections = relationship("Election", back_populates="teacher")
-    election_voter_records = relationship("ElectionVoter", back_populates="student")
+    organized_elections = relationship("Election", back_populates="organizer")
+    election_voter_records = relationship("ElectionVoter", back_populates="voter")
     audit_logs = relationship("AuditLog", back_populates="actor")

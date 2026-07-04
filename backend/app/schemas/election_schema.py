@@ -32,13 +32,13 @@ class ElectionDraftCreate(BaseModel):
 
 
 class ElectionCreate(ElectionDraftCreate):
-    voter_institution_ids: list[str] = []
+    eligible_voter_external_ids: list[str] = []
 
 
 class ElectionResponse(BaseModel):
     id: UUID
-    teacher_id: UUID
-    teacher_username: str | None = None
+    organizer_id: UUID
+    organizer_username: str | None = None
     title: str
     description: str | None = None
     status: str

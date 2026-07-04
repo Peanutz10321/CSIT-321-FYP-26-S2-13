@@ -24,7 +24,7 @@ def listUsers(
 ):
     """
     System admin can view/search user accounts.
-    Search checks username, email, and institution ID.
+    Search checks username, email, and external ID.
     """
 
     query = db.query(User).filter(User.id != current_admin.id)
@@ -35,7 +35,7 @@ def listUsers(
             or_(
                 User.username.ilike(keyword),
                 User.email.ilike(keyword),
-                User.institution_id.ilike(keyword),
+                User.external_id.ilike(keyword),
             )
         )
 

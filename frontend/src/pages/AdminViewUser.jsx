@@ -84,8 +84,8 @@ function AdminViewUser() {
                 {user?.full_name || '—'}
               </p>
               <p>
-                <span className="font-semibold text-slate-100">School ID: </span>
-                {user?.institution_id || '—'}
+                <span className="font-semibold text-slate-100">External ID: </span>
+                {user?.external_id || '—'}
               </p>
               <p>
                 <span className="font-semibold text-slate-100">Account Type: </span>

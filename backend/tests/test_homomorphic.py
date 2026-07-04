@@ -224,7 +224,7 @@ def _register(role: str) -> dict:
     suffix = uuid4().hex[:8]
     payload = {
         "role": role,
-        "institution_id": f"INST-{suffix}",
+        "external_id": f"INST-{suffix}",
         "username": f"{role}_{suffix}",
         "full_name": f"Test {role.title()}",
         "email": f"{role}_{suffix}@test.com",
@@ -278,28 +278,28 @@ class TestHEIntegration:
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        teacher = _register("teacher")
-        student = _register("student")
-        self.teacher_token = _login(teacher["email"])
-        self.student_token = _login(student["email"])
-        self.student = student
+        organizer = _register("organizer")
+        voter = _register("voter")
+        self.organizer_token = _login(organizer["email"])
+        self.voter_token = _login(voter["email"])
+        self.voter = voter
 
     def _create_and_activate(self) -> dict:
-        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.teacher_token))
+        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.organizer_token))
         assert r.status_code == 201, r.text
         election = r.json()
 
         r = client.post(
             f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"institution_id": self.student["institution_id"]},
-            headers=_auth(self.teacher_token),
+            json={"external_id": self.voter["external_id"]},
+            headers=_auth(self.organizer_token),
         )
         assert r.status_code == 201, r.text
 
         # Activate generates the Paillier keypair
         r = client.patch(
             f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=_auth(self.teacher_token),
+            headers=_auth(self.organizer_token),
         )
         assert r.status_code == 200, r.text
 
@@ -312,7 +312,7 @@ class TestHEIntegration:
         r = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=_auth(self.student_token),
+            headers=_auth(self.voter_token),
         )
 
         assert r.status_code == 201, r.text
@@ -333,7 +333,7 @@ class TestHEIntegration:
         r = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=_auth(self.student_token),
+            headers=_auth(self.voter_token),
         )
 
         assert r.status_code == 201, r.text
@@ -349,14 +349,14 @@ class TestHEIntegration:
         client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": candidate_id},
-            headers=_auth(self.student_token),
+            headers=_auth(self.voter_token),
         )
 
         _set_completed(election["id"])
 
         r = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
-            headers=_auth(self.teacher_token),
+            headers=_auth(self.organizer_token),
         )
 
         assert r.status_code == 200, r.text
@@ -370,14 +370,14 @@ class TestHEIntegration:
         from app.models.election import ElectionStatus as ES
 
         # Create as a draft so no keypair is generated, then force-activate below.
-        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.teacher_token))
+        r = client.post(f"{ELECTION_BASE}/draft", json=_election_payload(), headers=_auth(self.organizer_token))
         assert r.status_code == 201
         election = r.json()
 
         r = client.post(
             f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"institution_id": self.student["institution_id"]},
-            headers=_auth(self.teacher_token),
+            json={"external_id": self.voter["external_id"]},
+            headers=_auth(self.organizer_token),
         )
         assert r.status_code == 201
 
@@ -393,7 +393,7 @@ class TestHEIntegration:
         r = client.post(
             VOTE_BASE,
             json={"election_id": election["id"], "candidate_id": election["candidates"][0]["id"]},
-            headers=_auth(self.student_token),
+            headers=_auth(self.voter_token),
         )
 
         assert r.status_code == 500

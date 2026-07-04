@@ -31,7 +31,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     """
     Public registration.
-    Only student and teacher accounts can be registered publicly.
+    Only voter and organizer accounts can be registered publicly.
     System admin accounts must NOT be publicly registered.
     """
 
@@ -58,11 +58,11 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="System admin accounts cannot be registered publicly",
         )
 
-    # Only allow student or teacher
-    if request.role not in [UserRole.student.value, UserRole.teacher.value]:
+    # Only allow voter or organizer
+    if request.role not in [UserRole.voter.value, UserRole.organizer.value]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either student or teacher",
+            detail="Role must be either voter or organizer",
         )
 
     # Check duplicate email
@@ -80,26 +80,26 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Username already exists.",
         )
 
-    # Generate institution_id: STU-001 for students, TCH-001 for teachers
+    # Generate external_id: VOTER-001 for voters, ORG-001 for organizers
     role_enum = UserRole(request.role)
-    prefix = "STU" if role_enum == UserRole.student else "TCH"
-    existing_ids = (
-        db.query(User.institution_id)
+    prefix = "VOTER" if role_enum == UserRole.voter else "ORG"
+    existing_external_ids = (
+        db.query(User.external_id)
         .filter(User.role == role_enum)
         .all()
     )
     max_num = 0
-    for (iid,) in existing_ids:
+    for (existing_external_id,) in existing_external_ids:
         try:
-            num = int(iid.split("-")[1])
+            num = int(existing_external_id.split("-")[1])
             if num > max_num:
                 max_num = num
         except (IndexError, ValueError):
             pass
-    institution_id = f"{prefix}-{max_num + 1:03d}"
+    external_id = f"{prefix}-{max_num + 1:03d}"
 
     new_user = User(
-        institution_id=institution_id,
+        external_id=external_id,
         username=request.username,
         full_name=_generate_full_name(),
         email=request.email,
@@ -127,7 +127,7 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login", response_model=AuthResponse)
 def loginUser(request: LoginRequest, db: Session = Depends(get_db)):
     """
-    Login for student, teacher, and system admin.
+    Login for voter, organizer, and system admin.
     Suspended users cannot login.
     """
 
