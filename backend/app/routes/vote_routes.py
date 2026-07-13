@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session
 from app.core.time import now_sgt
 from app.database import get_db
 from app.models.user import User
-from app.models.election import Election, ElectionStatus
+from app.models.election import Election, ElectionStatus, BallotType
 from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
 from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryResponse
 from app.security.audit import log_event
 from app.security.security import require_voter
-from app.security.homomorphic import deserialize_public_key, encrypt_vote
+from app.security.homomorphic import deserialize_public_key, encrypt_ballot
 
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
@@ -52,20 +52,61 @@ def submitVote(
             detail="Election is not currently within its voting period",
         )
 
-    candidate = (
-        db.query(Candidate)
-        .filter(
-            Candidate.id == payload.candidate_id,
-            Candidate.election_id == payload.election_id,
-        )
-        .first()
-    )
+    # Resolve the selection from the two supported request forms. candidate_ids is
+    # None when omitted and [] for an explicit abstention — those are distinct.
+    has_single = payload.candidate_id is not None
+    has_multi = payload.candidate_ids is not None
 
-    if not candidate:
+    if has_single and has_multi:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Candidate does not belong to this election",
+            detail="Provide either candidate_id or candidate_ids, not both",
         )
+
+    if not has_single and not has_multi:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A candidate selection is required (use candidate_id, or candidate_ids for multi-select and abstention)",
+        )
+
+    selected_ids = list(payload.candidate_ids) if has_multi else [payload.candidate_id]
+
+    # Never silently deduplicate — a repeated id is a client error.
+    if len(selected_ids) != len(set(selected_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate candidate selections are not allowed",
+        )
+
+    all_candidates = (
+        db.query(Candidate)
+        .filter(Candidate.election_id == payload.election_id)
+        .all()
+    )
+    candidate_by_id = {candidate.id: candidate for candidate in all_candidates}
+
+    for selected_id in selected_ids:
+        if selected_id not in candidate_by_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Candidate does not belong to this election",
+            )
+
+    # Enforce the ballot configuration. An empty selection is always a valid
+    # abstention; otherwise a single ballot allows exactly one and a multi ballot
+    # allows up to max_selections. Over-long selections are rejected, not truncated.
+    if election.ballot_type == BallotType.single:
+        if len(selected_ids) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A single-choice ballot allows at most one selection",
+            )
+    else:
+        if len(selected_ids) > election.max_selections:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You may select at most {election.max_selections} candidate(s) for this ballot",
+            )
 
     election_voter = (
         db.query(ElectionVoter)
@@ -106,15 +147,13 @@ def submitVote(
             detail="Election encryption keys are not initialized",
         )
 
-    all_candidates = (
-        db.query(Candidate)
-        .filter(Candidate.election_id == payload.election_id)
-        .all()
-    )
     candidate_ids = [str(c.id) for c in all_candidates]
+    selected_ids_str = [str(sid) for sid in selected_ids]
 
     public_key = deserialize_public_key(election.public_key_n)
-    encrypted_vote = encrypt_vote(public_key, candidate_ids, str(payload.candidate_id))
+    # Multi-hot encrypted vector: E(1) per selection, E(0) for the rest, all-zero for
+    # an abstention. No plaintext choice is stored anywhere on the ballot.
+    encrypted_vote = encrypt_ballot(public_key, candidate_ids, selected_ids_str)
 
     # The hash is an integrity/receipt token. It must never include the
     # candidate choice: the input space is tiny, so a DB reader could
@@ -161,8 +200,13 @@ def submitVote(
         )
     db.refresh(ballot)
 
-    # candidate_name is only known here, before the choice is encrypted away.
-    # It is never recoverable from the stored ballot (see getVoteDetails).
+    # The selected names are derived from THIS request only, before the choice is
+    # encrypted away. They are never persisted and never recoverable from the stored
+    # ballot afterwards (see getVoteDetails). candidate_name stays populated for a
+    # single selection to keep legacy clients working.
+    selected_names = [candidate_by_id[sid].name for sid in selected_ids]
+    single_name = selected_names[0] if len(selected_names) == 1 else None
+
     return VoteResponse(
         id=ballot.id,
         election_id=ballot.election_id,
@@ -172,7 +216,9 @@ def submitVote(
         receipt_code=ballot.receipt_code,
         submitted_at=ballot.submitted_at,
         bulletin_status=ballot.bulletin_status.value,
-        candidate_name=candidate.name,
+        candidate_name=single_name,
+        candidate_names=selected_names,
+        abstained=(len(selected_ids) == 0),
     )
 
 

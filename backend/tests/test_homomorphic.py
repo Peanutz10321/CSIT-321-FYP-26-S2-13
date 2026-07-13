@@ -24,6 +24,7 @@ from app.models.election import Election
 from app.security.homomorphic import (
     deserialize_private_key,
     deserialize_public_key,
+    encrypt_ballot,
     encrypt_vote,
     generate_keypair,
     homomorphic_tally,
@@ -140,6 +141,57 @@ class TestVoteEncrypt:
         for voted in ids:
             parsed = json.loads(encrypt_vote(pk, ids, voted))
             assert set(parsed.keys()) == set(ids)
+
+
+# ---------------------------------------------------------------------------
+# Multi-select / abstention ballot encryption
+# ---------------------------------------------------------------------------
+
+class TestBallotEncrypt:
+    def test_multi_hot_vector_decrypts_to_selected_ones(self, pk, sk):
+        ids = candidate_ids(4)
+        selected = [ids[0], ids[2]]
+        parsed = json.loads(encrypt_ballot(pk, ids, selected))
+        assert set(parsed.keys()) == set(ids)
+        for cid, data in parsed.items():
+            enc = EncryptedNumber(pk, int(data["c"]), data["e"])
+            assert sk.decrypt(enc) == (1 if cid in selected else 0)
+
+    def test_single_selection_matches_one_hot(self, pk, sk):
+        ids = candidate_ids(3)
+        parsed = json.loads(encrypt_ballot(pk, ids, [ids[1]]))
+        for cid, data in parsed.items():
+            enc = EncryptedNumber(pk, int(data["c"]), data["e"])
+            assert sk.decrypt(enc) == (1 if cid == ids[1] else 0)
+
+    def test_abstention_is_encrypted_all_zero_vector(self, pk, sk):
+        ids = candidate_ids(3)
+        parsed = json.loads(encrypt_ballot(pk, ids, []))
+        assert set(parsed.keys()) == set(ids)
+        for data in parsed.values():
+            # Genuinely encrypted zero, not a plaintext "0" placeholder.
+            assert data["c"] != "0"
+            assert len(data["c"]) > 10
+            enc = EncryptedNumber(pk, int(data["c"]), data["e"])
+            assert sk.decrypt(enc) == 0
+
+    def test_two_abstentions_produce_different_ciphertexts(self, pk):
+        """Semantic security: two encrypted-zero abstentions must not be byte-identical."""
+        ids = candidate_ids(2)
+        first = json.loads(encrypt_ballot(pk, ids, []))
+        second = json.loads(encrypt_ballot(pk, ids, []))
+        for cid in ids:
+            assert first[cid]["c"] != second[cid]["c"]
+
+    def test_tally_counts_multi_hot_and_ignores_abstention(self, pk, sk):
+        ids = candidate_ids(3)
+        ballots = [
+            encrypt_ballot(pk, ids, [ids[0], ids[1]]),  # A, B
+            encrypt_ballot(pk, ids, [ids[0]]),          # A
+            encrypt_ballot(pk, ids, []),                # abstention
+        ]
+        result = homomorphic_tally(pk, sk, ballots, ids)
+        assert result == {ids[0]: 2, ids[1]: 1, ids[2]: 0}
 
 
 # ---------------------------------------------------------------------------
