@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.time import now_sgt
 from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
-from app.models.election import Election, ElectionStatus
+from app.models.election import Election, ElectionStatus, BallotType
 from app.models.candidate import Candidate
 from app.models.ballot import Ballot
 from app.models.candidate_result import CandidateResult
@@ -30,12 +30,49 @@ from app.schemas.election_voter_schema import (
 router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
+def _validate_ballot_configuration(
+    ballot_type: BallotType,
+    max_selections: int,
+    candidate_count: int | None = None,
+) -> None:
+    """
+    Enforce ballot configuration rules using the project's 400 convention.
+
+    - max_selections must be at least 1 (never zero or negative);
+    - a single-choice ballot must allow exactly one selection;
+    - once the candidate list is final (create-active / activation), max_selections
+      may not exceed the number of candidates.
+
+    candidate_count is left None for drafts, whose candidate list is not yet final.
+    """
+    if max_selections < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="max_selections must be at least 1",
+        )
+
+    if ballot_type == BallotType.single and max_selections != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A single-choice ballot must have max_selections equal to 1",
+        )
+
+    if candidate_count is not None and max_selections > candidate_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="max_selections cannot exceed the number of candidates",
+        )
+
+
 @router.post("/draft", response_model=ElectionResponse, status_code=status.HTTP_201_CREATED)
 def createElectionDraft(
     payload: ElectionDraftCreate,
     db: Session = Depends(get_db),
     current_organizer: User = Depends(require_organizer),
 ):
+    # Drafts stay relaxed (candidate list not final), so no candidate-count check.
+    _validate_ballot_configuration(payload.ballot_type, payload.max_selections)
+
     election = Election(
         organizer_id=current_organizer.id,
         title=payload.title,
@@ -43,6 +80,8 @@ def createElectionDraft(
         start_date=payload.start_date,
         end_date=payload.end_date,
         status=ElectionStatus.draft,
+        ballot_type=payload.ballot_type,
+        max_selections=payload.max_selections,
     )
 
     db.add(election)
@@ -104,6 +143,14 @@ def createElection(
             detail="At least one eligible voter is required",
         )
 
+    # This path creates an active election with a final candidate list, so the
+    # candidate-count rule applies here too.
+    _validate_ballot_configuration(
+        payload.ballot_type,
+        payload.max_selections,
+        candidate_count=len(payload.candidates),
+    )
+
     election = Election(
         organizer_id=current_organizer.id,
         title=payload.title,
@@ -111,6 +158,8 @@ def createElection(
         start_date=payload.start_date,
         end_date=payload.end_date,
         status=ElectionStatus.active,
+        ballot_type=payload.ballot_type,
+        max_selections=payload.max_selections,
     )
 
     db.add(election)
@@ -378,6 +427,23 @@ def updateElection(
                 display_order=candidate_data.display_order or index,
             )
             db.add(candidate)
+
+    # Validate the resulting ballot configuration (merging any provided fields with
+    # what is already stored). Still a draft, so the candidate-count rule is deferred
+    # to activation.
+    effective_ballot_type = (
+        payload.ballot_type if payload.ballot_type is not None else election.ballot_type
+    )
+    effective_max_selections = (
+        payload.max_selections if payload.max_selections is not None else election.max_selections
+    )
+    _validate_ballot_configuration(effective_ballot_type, effective_max_selections)
+
+    if payload.ballot_type is not None:
+        election.ballot_type = payload.ballot_type
+
+    if payload.max_selections is not None:
+        election.max_selections = payload.max_selections
 
     db.commit()
 
@@ -789,6 +855,13 @@ def activateElection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Election must have at least one candidate before activation",
         )
+
+    # Candidate list is now final: enforce the full ballot configuration.
+    _validate_ballot_configuration(
+        election.ballot_type,
+        election.max_selections,
+        candidate_count=len(election.candidates),
+    )
 
     if not election.end_date:
         raise HTTPException(
