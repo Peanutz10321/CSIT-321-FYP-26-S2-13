@@ -9,6 +9,7 @@ from app.database import Base, engine, SessionLocal
 # Import models so SQLAlchemy registers all tables
 import app.models.user
 import app.models.election
+import app.models.election_key
 import app.models.candidate
 import app.models.election_voter
 import app.models.ballot
@@ -23,12 +24,10 @@ from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
 from app.security.password import hash_password
 from app.security.homomorphic import (
-    generate_keypair,
-    serialize_public_key,
-    serialize_private_key,
     deserialize_public_key,
     encrypt_vote,
 )
+from app.security.keystore import create_and_store_keypair
 
 
 DEMO_PASSWORD = "Demo12345!"
@@ -41,6 +40,7 @@ def reset_tables(db):
             ballots,
             election_voters,
             candidates,
+            election_keys,
             elections,
             audit_logs,
             users
@@ -206,8 +206,6 @@ def main():
         now = now_sgt()
 
         # Active election for live demo
-        active_public_key, active_private_key = generate_keypair()
-
         active_election = Election(
             organizer_id=organizer.id,
             title="Community Leadership Voting Event 2026",
@@ -215,11 +213,10 @@ def main():
             status=ElectionStatus.active,
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(days=7),
-            public_key_n=serialize_public_key(active_public_key),
-            private_key_json=serialize_private_key(active_private_key),
         )
         db.add(active_election)
         db.flush()
+        create_and_store_keypair(db, active_election)
 
         create_candidates(
             db,
@@ -234,8 +231,6 @@ def main():
         )
 
         # Completed election for results demo
-        completed_public_key, completed_private_key = generate_keypair()
-
         completed_election = Election(
             organizer_id=organizer.id,
             title="Completed Organization Voting Event 2026",
@@ -243,11 +238,10 @@ def main():
             status=ElectionStatus.completed,
             start_date=now - timedelta(days=10),
             end_date=now - timedelta(days=5),
-            public_key_n=serialize_public_key(completed_public_key),
-            private_key_json=serialize_private_key(completed_private_key),
         )
         db.add(completed_election)
         db.flush()
+        create_and_store_keypair(db, completed_election)
 
         completed_candidates = create_candidates(
             db,

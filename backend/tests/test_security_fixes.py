@@ -23,8 +23,11 @@ from sqlalchemy.exc import IntegrityError
 from app.main import app
 from app.database import SessionLocal
 from app.models.ballot import Ballot, BulletinStatus
+from app.models.election import Election
+from app.models.election_key import ElectionKey
 from app.models.election_voter import ElectionVoter
 from app.security.homomorphic import _enc_to_dict, encrypt_vote
+from app.security.keystore import ElectionKeyMissingError, load_private_key
 
 
 client = TestClient(app)
@@ -240,7 +243,53 @@ class TestReceiptSecrecy:
 
 
 # ---------------------------------------------------------------------------
-# 4. Double-vote protection: the DB constraint behind the 400 error path
+# 4. Keystore: private key out of the elections table, encrypted at rest
+# ---------------------------------------------------------------------------
+
+class TestKeystore:
+    def test_elections_table_holds_no_private_key(
+        self, organizer_token, voter_user
+    ):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        assert not hasattr(Election, "private_key_json")
+
+        db = SessionLocal()
+        try:
+            key_row = db.get(ElectionKey, UUID(election["id"]))
+            assert key_row is not None
+            # Fernet token, not plaintext {"p": ..., "q": ...} JSON
+            assert '"p"' not in key_row.encrypted_private_key
+            assert key_row.encrypted_private_key.startswith("gAAAA")
+        finally:
+            db.close()
+
+    def test_stored_key_round_trips_through_keystore(
+        self, organizer_token, voter_user
+    ):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        db = SessionLocal()
+        try:
+            row = db.query(Election).filter(Election.id == UUID(election["id"])).first()
+            private_key = load_private_key(db, row)
+            public_key = private_key.public_key
+            assert private_key.decrypt(public_key.encrypt(7)) == 7
+        finally:
+            db.close()
+
+    def test_missing_key_raises(self):
+        db = SessionLocal()
+        try:
+            orphan = Election(id=uuid4())
+            with pytest.raises(ElectionKeyMissingError):
+                load_private_key(db, orphan)
+        finally:
+            db.close()
+
+
+# ---------------------------------------------------------------------------
+# 5. Double-vote protection: the DB constraint behind the 400 error path
 # ---------------------------------------------------------------------------
 
 class TestDoubleVoteConstraint:

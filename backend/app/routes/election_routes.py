@@ -12,11 +12,7 @@ from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
 from app.security.security import get_current_user, require_organizer
-from app.security.homomorphic import (
-    generate_keypair,
-    serialize_public_key,
-    serialize_private_key,
-)
+from app.security.keystore import create_and_store_keypair
 
 from sqlalchemy.exc import IntegrityError
 from app.models.election_voter import ElectionVoter, EligibilityStatus
@@ -104,8 +100,6 @@ def createElection(
             detail="At least one eligible voter is required",
         )
 
-    public_key, private_key = generate_keypair()
-
     election = Election(
         organizer_id=current_organizer.id,
         title=payload.title,
@@ -113,12 +107,12 @@ def createElection(
         start_date=payload.start_date,
         end_date=payload.end_date,
         status=ElectionStatus.active,
-        public_key_n=serialize_public_key(public_key),
-        private_key_json=serialize_private_key(private_key),
     )
 
     db.add(election)
     db.flush()  # gives election.id before commit
+
+    create_and_store_keypair(db, election)
 
     for index, candidate_data in enumerate(payload.candidates, start=1):
         candidate = Candidate(
@@ -699,9 +693,7 @@ def activateElection(
             detail="Election must have at least one eligible voter before activation",
         )
 
-    public_key, private_key = generate_keypair()
-    election.public_key_n = serialize_public_key(public_key)
-    election.private_key_json = serialize_private_key(private_key)
+    create_and_store_keypair(db, election)
     election.status = ElectionStatus.active
     db.commit()
 
