@@ -41,6 +41,8 @@ jobs:
           DATABASE_URL: sqlite:///./test.db
           JWT_SECRET: test
           JWT_ALGORITHM: HS256
+          # Throwaway Fernet key for tests only — real one lives in .env
+          KEYSTORE_MASTER_SECRET: odLNbv3Y2g1epq7Q-qRgM2riovLBiRnrp7KAEGjKujs=
           TESTING: "true"
         run: pytest tests -v
 
