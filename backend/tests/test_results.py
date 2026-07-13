@@ -168,6 +168,44 @@ def prepare_completed_election_with_vote(organizer_token, voter_user, voter_toke
     return election, candidate_id
 
 
+def three_candidate_election_payload() -> dict:
+    now = datetime.utcnow()
+
+    return {
+        "title": unique_text("Multi Voter Tally Election"),
+        "description": "Three-candidate election for tally characterization",
+        "start_date": (now - timedelta(minutes=10)).isoformat(),
+        "end_date": (now + timedelta(hours=24)).isoformat(),
+        "candidates": [
+            {"name": unique_text("Alice"), "description": "Candidate A", "photo_url": None, "display_order": 1},
+            {"name": unique_text("Bob"), "description": "Candidate B", "photo_url": None, "display_order": 2},
+            {"name": unique_text("Carol"), "description": "Candidate C", "photo_url": None, "display_order": 3},
+        ],
+    }
+
+
+def create_three_candidate_election(organizer_token: str) -> dict:
+    response = client.post(
+        f"{ELECTION_BASE}/draft",
+        json=three_candidate_election_payload(),
+        headers=auth_header(organizer_token),
+    )
+
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def cast_vote(voter_token: str, election_id: str, candidate_id: str):
+    response = client.post(
+        VOTE_BASE,
+        json={"election_id": election_id, "candidate_id": candidate_id},
+        headers=auth_header(voter_token),
+    )
+
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 class TestElectionResults:
     def test_organizer_can_view_completed_election_results(
         self,
@@ -346,3 +384,56 @@ class TestElectionResults:
         data = response.json()
         assert data["winner"] is None
         assert len(data["tied_candidates"]) == 2
+
+    def test_multi_voter_tally_maps_all_candidate_totals(self, organizer_token):
+        """Known-answer characterization of the tally: four ballots cast across
+        three candidates (two for A, one for B, one for C) must resolve to totals
+        of 2, 1, and 1, with a reported total of 4 votes.
+
+        This is deterministic — each of the four distinct voters casts exactly one
+        ballot for a fixed candidate — and is self-contained: it creates its own
+        organizer, voters, election, candidates, and ballots, all using @test.com
+        users so the conftest cleanup fixture reclaims them afterwards.
+        """
+        election = create_three_candidate_election(organizer_token)
+
+        candidate_a = election["candidates"][0]["id"]
+        candidate_b = election["candidates"][1]["id"]
+        candidate_c = election["candidates"][2]["id"]
+
+        # Four distinct eligible voters, added while the election is still a draft.
+        voter_tokens = []
+        for _ in range(4):
+            voter = register_user("voter")
+            voter_tokens.append(login_user(voter["email"]))
+            add_voter_to_election(organizer_token, election["id"], voter)
+
+        # Activation generates the Paillier keypair used to encrypt the ballots.
+        activate_election(organizer_token, election["id"])
+
+        # Two votes for A, one for B, one for C.
+        cast_vote(voter_tokens[0], election["id"], candidate_a)
+        cast_vote(voter_tokens[1], election["id"], candidate_a)
+        cast_vote(voter_tokens[2], election["id"], candidate_b)
+        cast_vote(voter_tokens[3], election["id"], candidate_c)
+
+        set_election_status(election["id"], ElectionStatus.completed)
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        results_by_candidate = {
+            item["candidate_id"]: item["total_votes"] for item in data["results"]
+        }
+
+        assert results_by_candidate == {
+            candidate_a: 2,
+            candidate_b: 1,
+            candidate_c: 1,
+        }
+        assert data["total_votes"] == 4
