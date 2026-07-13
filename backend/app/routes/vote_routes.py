@@ -1,8 +1,10 @@
 import hashlib
+import secrets
 import uuid
 from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.time import now_sgt
@@ -113,8 +115,12 @@ def submitVote(
     public_key = deserialize_public_key(election.public_key_n)
     encrypted_vote = encrypt_vote(public_key, candidate_ids, str(payload.candidate_id))
 
+    # The hash is an integrity/receipt token. It must never include the
+    # candidate choice: the input space is tiny, so a DB reader could
+    # brute-force sha256(election:voter:candidate:time) and unmask the vote.
+    salt = secrets.token_hex(16)
     vote_hash = hashlib.sha256(
-        f"{payload.election_id}:{current_voter.id}:{payload.candidate_id}:{now.isoformat()}".encode()
+        f"{salt}:{payload.election_id}:{election_voter.id}".encode()
     ).hexdigest()
 
     receipt_code = f"RCPT-{uuid.uuid4().hex[:12].upper()}"
@@ -132,10 +138,31 @@ def submitVote(
     election_voter.voted_at = now
 
     db.add(ballot)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Unique constraint on ballot.election_voter_id: a concurrent request
+        # already inserted this voter's ballot between our check and commit.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already voted in this election",
+        )
     db.refresh(ballot)
 
-    return ballot
+    # candidate_name is only known here, before the choice is encrypted away.
+    # It is never recoverable from the stored ballot (see getVoteDetails).
+    return VoteResponse(
+        id=ballot.id,
+        election_id=ballot.election_id,
+        election_voter_id=ballot.election_voter_id,
+        encrypted_vote=ballot.encrypted_vote,
+        vote_hash=ballot.vote_hash,
+        receipt_code=ballot.receipt_code,
+        submitted_at=ballot.submitted_at,
+        bulletin_status=ballot.bulletin_status.value,
+        candidate_name=candidate.name,
+    )
 
 
 @router.get("/history", response_model=list[VoteHistoryResponse])
@@ -203,22 +230,9 @@ def getVoteDetails(
             detail="Vote not found",
         )
 
-    candidate_name = None
-    prefix = "encrypted_placeholder:"
-    if ballot.encrypted_vote.startswith(prefix):
-        cid_str = ballot.encrypted_vote.replace(prefix, "", 1)
-        try:
-            cid = uuid.UUID(cid_str)
-            candidate = (
-                db.query(Candidate)
-                .filter(Candidate.id == cid, Candidate.election_id == ballot.election_id)
-                .first()
-            )
-            if candidate:
-                candidate_name = candidate.name
-        except (ValueError, AttributeError):
-            pass
-
+    # candidate_name stays None by design: the ballot is Paillier-encrypted and
+    # the server cannot recover an individual choice after submission. The
+    # plaintext choice only appears in the immediate submitVote response.
     return VoteResponse(
         id=ballot.id,
         election_id=ballot.election_id,
@@ -228,5 +242,5 @@ def getVoteDetails(
         receipt_code=ballot.receipt_code,
         submitted_at=ballot.submitted_at,
         bulletin_status=ballot.bulletin_status.value,
-        candidate_name=candidate_name,
+        candidate_name=None,
     )
