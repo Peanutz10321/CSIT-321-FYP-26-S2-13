@@ -2,6 +2,8 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, Field
 
+from app.models.election import BallotType
+
 
 class CandidateCreate(BaseModel):
     name: str = Field(..., min_length=1)
@@ -29,6 +31,10 @@ class ElectionDraftCreate(BaseModel):
     start_date: datetime
     end_date: datetime | None = None
     candidates: list[CandidateCreate] = []
+    # Ballot configuration. Omitting these keeps the historical single-choice
+    # behaviour; cross-field/candidate-count rules are enforced in the routes.
+    ballot_type: BallotType = BallotType.single
+    max_selections: int = 1
 
 
 class ElectionCreate(ElectionDraftCreate):
@@ -42,6 +48,8 @@ class ElectionResponse(BaseModel):
     title: str
     description: str | None = None
     status: str
+    ballot_type: str
+    max_selections: int
     start_date: datetime
     end_date: datetime | None = None
     candidates: list[CandidateResponse] = []
@@ -60,3 +68,5 @@ class ElectionUpdate(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
     candidates: list[CandidateCreate] | None = None
+    ballot_type: BallotType | None = None
+    max_selections: int | None = None

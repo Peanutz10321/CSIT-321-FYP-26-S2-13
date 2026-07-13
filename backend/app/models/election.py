@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Column, String, Text, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Enum, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,6 +15,11 @@ class ElectionStatus(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
     archived = "archived"
+
+
+class BallotType(str, enum.Enum):
+    single = "single"
+    multi = "multi"
 
 
 class Election(Base):
@@ -33,6 +38,23 @@ class Election(Base):
 
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
+
+    # Ballot configuration. Defaults keep every existing caller a single-choice
+    # ballot with exactly one selection. A server_default is set as well so a future
+    # migration backfills existing rows without a NULL window (no migration in this
+    # PR — see the PR notes about the coordinated schema update before shared DB use).
+    ballot_type = Column(
+        Enum(BallotType, name="ballot_type"),
+        nullable=False,
+        default=BallotType.single,
+        server_default=BallotType.single.value,
+    )
+    max_selections = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
 
     # The Paillier private key deliberately does NOT live on this model —
     # see app/models/election_key.py and app/security/keystore.py.
