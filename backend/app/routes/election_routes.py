@@ -11,6 +11,7 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
+from app.security.audit import log_event
 from app.security.security import get_current_user, require_organizer
 from app.security.keystore import create_and_store_keypair
 
@@ -113,6 +114,13 @@ def createElection(
     db.flush()  # gives election.id before commit
 
     create_and_store_keypair(db, election)
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="key_generated",
+        entity_type="election",
+        entity_id=election.id,
+    )
 
     for index, candidate_data in enumerate(payload.candidates, start=1):
         candidate = Candidate(
@@ -695,6 +703,20 @@ def activateElection(
 
     create_and_store_keypair(db, election)
     election.status = ElectionStatus.active
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="key_generated",
+        entity_type="election",
+        entity_id=election.id,
+    )
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_activated",
+        entity_type="election",
+        entity_id=election.id,
+    )
     db.commit()
 
     updated_election = (

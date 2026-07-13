@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.main import app
 from app.database import SessionLocal
+from app.models.audit_log import AuditLog
 from app.models.ballot import Ballot, BulletinStatus
 from app.models.election import Election
 from app.models.election_key import ElectionKey
@@ -289,7 +290,53 @@ class TestKeystore:
 
 
 # ---------------------------------------------------------------------------
-# 5. Double-vote protection: the DB constraint behind the 400 error path
+# 5. Audit log: security-relevant events leave an append-only trail
+# ---------------------------------------------------------------------------
+
+class TestAuditLog:
+    def test_casting_a_vote_writes_an_audit_row_without_the_choice(
+        self, organizer_token, voter_user, voter_token
+    ):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        cast_vote(voter_token, election)
+
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.actor_user_id == UUID(voter_user["id"]),
+                    AuditLog.action == "vote_cast",
+                )
+                .first()
+            )
+            assert row is not None
+            assert row.entity_type == "ballot"
+            # The audit trail records THAT a vote happened, never the choice
+            for candidate in election["candidates"]:
+                assert candidate["id"] not in (row.details or "")
+        finally:
+            db.close()
+
+    def test_activation_logs_key_generated(self, organizer_token, voter_user):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        db = SessionLocal()
+        try:
+            actions = {
+                row.action
+                for row in db.query(AuditLog)
+                .filter(AuditLog.entity_id == UUID(election["id"]))
+                .all()
+            }
+            assert "key_generated" in actions
+            assert "election_activated" in actions
+        finally:
+            db.close()
+
+
+# ---------------------------------------------------------------------------
+# 6. Double-vote protection: the DB constraint behind the 400 error path
 # ---------------------------------------------------------------------------
 
 class TestDoubleVoteConstraint:

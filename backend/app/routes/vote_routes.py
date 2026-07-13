@@ -15,6 +15,7 @@ from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
 from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryResponse
+from app.security.audit import log_event
 from app.security.security import require_voter
 from app.security.homomorphic import deserialize_public_key, encrypt_vote
 
@@ -139,6 +140,16 @@ def submitVote(
 
     db.add(ballot)
     try:
+        db.flush()  # assigns ballot.id; raises IntegrityError on double-vote
+        # Audit the act of voting only — never the choice
+        log_event(
+            db,
+            actor_user_id=current_voter.id,
+            action="vote_cast",
+            entity_type="ballot",
+            entity_id=ballot.id,
+            details=f"election={payload.election_id}",
+        )
         db.commit()
     except IntegrityError:
         # Unique constraint on ballot.election_voter_id: a concurrent request
