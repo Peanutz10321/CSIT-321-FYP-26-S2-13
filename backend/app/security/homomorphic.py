@@ -28,7 +28,10 @@ def deserialize_private_key(sk_json: str, pk: PaillierPublicKey) -> PaillierPriv
 
 
 def _enc_to_dict(enc: EncryptedNumber) -> dict:
-    return {"c": str(enc.ciphertext(be_secure=False)), "e": enc.exponent}
+    # be_secure=True guarantees the ciphertext is obfuscated (fresh randomness)
+    # before it leaves this module — stored E(0)/E(1) values must never be
+    # matchable against attacker-computed encryptions under the public key.
+    return {"c": str(enc.ciphertext(be_secure=True)), "e": enc.exponent}
 
 
 def _dict_to_enc(data: dict, pk: PaillierPublicKey) -> EncryptedNumber:

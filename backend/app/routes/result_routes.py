@@ -16,9 +16,9 @@ from app.schemas.result_schema import ElectionResultResponse, CandidateResultRes
 from app.security.security import get_current_user
 from app.security.homomorphic import (
     deserialize_public_key,
-    deserialize_private_key,
     homomorphic_tally,
 )
+from app.security.keystore import load_private_key
 
 
 router = APIRouter(prefix="/results", tags=["Results"])
@@ -99,9 +99,10 @@ def getElectionResults(
     ballots = db.query(Ballot).filter(Ballot.election_id == election.id).all()
     candidate_ids = [str(c.id) for c in candidates]
 
-    if election.public_key_n and election.private_key_json:
+    if election.public_key_n:
         pk = deserialize_public_key(election.public_key_n)
-        sk = deserialize_private_key(election.private_key_json, pk)
+        # Private key lives in the encrypted keystore, fetched at tally time only
+        sk = load_private_key(db, election)
         tally = homomorphic_tally(pk, sk, [b.encrypted_vote for b in ballots], candidate_ids)
     else:
         tally = _legacy_tally(candidates, ballots)

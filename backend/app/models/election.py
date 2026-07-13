@@ -34,8 +34,9 @@ class Election(Base):
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
 
+    # The Paillier private key deliberately does NOT live on this model —
+    # see app/models/election_key.py and app/security/keystore.py.
     public_key_n = Column(Text, nullable=True)
-    private_key_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

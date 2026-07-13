@@ -8,13 +8,14 @@ from fastapi import Depends
 
 from app.database import Base, engine, get_db
 
-import app.models.user  
-import app.models.election 
-import app.models.candidate 
-import app.models.election_voter  
-import app.models.ballot  
-import app.models.candidate_result  
-import app.models.audit_log  
+import app.models.user
+import app.models.election
+import app.models.election_key
+import app.models.candidate
+import app.models.election_voter
+import app.models.ballot
+import app.models.candidate_result
+import app.models.audit_log
 
 from app.routes.auth_routes import router as auth_router
 from app.routes.user_routes import router as user_router

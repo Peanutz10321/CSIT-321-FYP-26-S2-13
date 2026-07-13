@@ -24,13 +24,14 @@ def pytest_configure(config):
     if not database_url:
         raise RuntimeError("DATABASE_URL is missing from .env.test")
 
-    import app.models.user  
-    import app.models.election  
-    import app.models.candidate  
-    import app.models.election_voter  
-    import app.models.ballot  
-    import app.models.candidate_result  
-    import app.models.audit_log  
+    import app.models.user
+    import app.models.election
+    import app.models.election_key
+    import app.models.candidate
+    import app.models.election_voter
+    import app.models.ballot
+    import app.models.candidate_result
+    import app.models.audit_log
 
     from app.database import Base, engine
 
@@ -99,6 +100,16 @@ def clean_test_records():
 
         db.execute(text("""
             DELETE FROM candidates
+            WHERE election_id IN (
+                SELECT e.id
+                FROM elections e
+                JOIN users u ON u.id = e.organizer_id
+                WHERE u.email LIKE '%@test.com'
+            )
+        """))
+
+        db.execute(text("""
+            DELETE FROM election_keys
             WHERE election_id IN (
                 SELECT e.id
                 FROM elections e
