@@ -10,10 +10,13 @@ from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
+from app.models.ballot import Ballot
+from app.models.candidate_result import CandidateResult
 from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
 from app.security.audit import log_event
 from app.security.security import get_current_user, require_organizer
-from app.security.keystore import create_and_store_keypair
+from app.security.keystore import create_and_store_keypair, load_private_key
+from app.security.homomorphic import deserialize_public_key, homomorphic_tally
 
 from sqlalchemy.exc import IntegrityError
 from app.models.election_voter import ElectionVoter, EligibilityStatus
@@ -605,16 +608,26 @@ def getEligibleVoters(
         for election_voter, voter in voter_records
     ]
 
-@router.patch("/{election_id}/complete", response_model=ElectionResponse)
-def completeElection(
-    election_id: UUID,
-    db: Session = Depends(get_db),
-    current_organizer: User = Depends(require_organizer),
-):
+def _finalize_election_close(db: Session, election_id: UUID, current_organizer: User) -> Election:
+    """
+    Shared close/tally workflow behind both POST /{id}/close and the legacy
+    PATCH /{id}/complete, so no public path can mark an election completed without
+    also producing its cached results.
+
+    Runs the homomorphic tally exactly once, upserts candidate_results, flips the
+    status to completed, and records the election_closed + results_published audit
+    events — all in a single atomic commit. Returns the completed election.
+
+    Concurrency: the election row is taken with SELECT ... FOR UPDATE, so on
+    PostgreSQL a second concurrent request blocks on the lock, and once the first
+    transaction commits it re-reads the now-completed row and exits at the status
+    guard below — before any second tally. SQLAlchemy omits FOR UPDATE on SQLite
+    (which already serializes writers), so the same guard keeps SQLite correct.
+    """
     election = (
         db.query(Election)
-        .options(joinedload(Election.candidates))
         .filter(Election.id == election_id)
+        .with_for_update()
         .first()
     )
 
@@ -627,21 +640,118 @@ def completeElection(
     if election.organizer_id != current_organizer.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only complete elections that you created",
+            detail="You can only close elections that you created",
         )
 
+    # Re-validated on the locked row: a request that was blocked on the lock now
+    # sees completed and stops here, so the tally never runs twice.
     if election.status != ElectionStatus.active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only active elections can be completed",
+            detail="Only active elections can be closed",
         )
+
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.election_id == election.id)
+        .all()
+    )
+
+    if not candidates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Election has no candidates",
+        )
+
+    candidate_ids = [str(candidate.id) for candidate in candidates]
+    ballots = db.query(Ballot).filter(Ballot.election_id == election.id).all()
+
+    # The private key is fetched from the encrypted keystore at tally time only and
+    # never stored on the election object or returned in the response. HTTPExceptions
+    # are re-raised untouched; only a genuine tally/DB failure rolls back and surfaces
+    # a generic 500 so nothing about the key or the individual ballots leaks.
+    try:
+        public_key = deserialize_public_key(election.public_key_n)
+        private_key = load_private_key(db, election)
+        tally = homomorphic_tally(
+            public_key,
+            private_key,
+            [ballot.encrypted_vote for ballot in ballots],
+            candidate_ids,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to tally the election results",
+        )
+
+    published_at = now_sgt()
+
+    for candidate_id_str, total_votes in tally.items():
+        candidate_id = UUID(candidate_id_str)
+
+        result_row = (
+            db.query(CandidateResult)
+            .filter(
+                CandidateResult.election_id == election.id,
+                CandidateResult.candidate_id == candidate_id,
+            )
+            .first()
+        )
+
+        if result_row:
+            result_row.total_votes = total_votes
+            result_row.published_at = published_at
+        else:
+            db.add(CandidateResult(
+                election_id=election.id,
+                candidate_id=candidate_id,
+                total_votes=total_votes,
+                published_at=published_at,
+            ))
 
     election.status = ElectionStatus.completed
 
-    db.commit()
-    db.refresh(election)
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_closed",
+        entity_type="election",
+        entity_id=election.id,
+    )
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="results_published",
+        entity_type="election",
+        entity_id=election.id,
+    )
 
-    return election
+    db.commit()
+
+    return (
+        db.query(Election)
+        .options(joinedload(Election.candidates))
+        .filter(Election.id == election.id)
+        .first()
+    )
+
+
+@router.patch("/{election_id}/complete", response_model=ElectionResponse)
+def completeElection(
+    election_id: UUID,
+    db: Session = Depends(get_db),
+    current_organizer: User = Depends(require_organizer),
+):
+    """
+    Legacy completion endpoint. Kept for API compatibility but routed through the
+    same close/tally service as POST /{id}/close, so it can never leave an election
+    marked completed without cached candidate_results.
+    """
+    return _finalize_election_close(db, election_id, current_organizer)
 
 @router.patch("/{election_id}/activate", response_model=ElectionResponse)
 def activateElection(
@@ -727,3 +837,18 @@ def activateElection(
     )
 
     return updated_election
+
+
+@router.post("/{election_id}/close", response_model=ElectionResponse)
+def closeElection(
+    election_id: UUID,
+    db: Session = Depends(get_db),
+    current_organizer: User = Depends(require_organizer),
+):
+    """
+    Explicitly close an active election: run the homomorphic tally exactly once,
+    persist the per-candidate results, mark the election completed, and record the
+    audit trail — all in a single atomic commit. Results are produced here and are
+    only ever read (never recomputed) by GET /results afterwards.
+    """
+    return _finalize_election_close(db, election_id, current_organizer)

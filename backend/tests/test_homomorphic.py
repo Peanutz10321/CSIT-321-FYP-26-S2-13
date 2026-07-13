@@ -20,7 +20,7 @@ from phe.paillier import EncryptedNumber
 
 from app.database import SessionLocal
 from app.main import app
-from app.models.election import Election, ElectionStatus
+from app.models.election import Election
 from app.security.homomorphic import (
     deserialize_private_key,
     deserialize_public_key,
@@ -259,16 +259,6 @@ def _election_payload() -> dict:
     }
 
 
-def _set_completed(election_id: str):
-    db = SessionLocal()
-    try:
-        e = db.query(Election).filter(Election.id == UUID(election_id)).first()
-        e.status = ElectionStatus.completed
-        db.commit()
-    finally:
-        db.close()
-
-
 class TestHEIntegration:
     """
     End-to-end tests for the Paillier-encrypted vote flow through the API.
@@ -352,7 +342,12 @@ class TestHEIntegration:
             headers=_auth(self.voter_token),
         )
 
-        _set_completed(election["id"])
+        # The tally now runs at close time, not on read.
+        close = client.post(
+            f"{ELECTION_BASE}/{election['id']}/close",
+            headers=_auth(self.organizer_token),
+        )
+        assert close.status_code == 200, close.text
 
         r = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
