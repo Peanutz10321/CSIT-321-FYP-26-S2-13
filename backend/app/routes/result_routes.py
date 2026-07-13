@@ -1,39 +1,19 @@
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.time import now_sgt
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
-from app.models.ballot import Ballot
 from app.models.candidate_result import CandidateResult
 from app.models.election_voter import ElectionVoter
 from app.schemas.result_schema import ElectionResultResponse, CandidateResultResponse
 from app.security.security import get_current_user
-from app.security.homomorphic import (
-    deserialize_public_key,
-    homomorphic_tally,
-)
-from app.security.keystore import load_private_key
 
 
 router = APIRouter(prefix="/results", tags=["Results"])
-
-
-def _legacy_tally(candidates, ballots) -> dict[str, int]:
-    """Fallback for elections created before homomorphic encryption was enabled."""
-    prefix = "encrypted_placeholder:"
-    counts = {str(c.id): 0 for c in candidates}
-    for ballot in ballots:
-        if ballot.encrypted_vote.startswith(prefix):
-            cid = ballot.encrypted_vote.replace(prefix, "", 1)
-            if cid in counts:
-                counts[cid] += 1
-    return counts
 
 
 @router.get("/elections/{election_id}", response_model=ElectionResultResponse)
@@ -42,6 +22,14 @@ def getElectionResults(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Read-only view of an election's published results.
+
+    Results are computed and persisted exactly once when the organizer closes the
+    election (POST /elections/{id}/close). This endpoint only ever reads the cached
+    candidate_results — it never decrypts ballots, loads the private key, runs a
+    tally, writes, commits, or transitions the election status.
+    """
     election = db.query(Election).filter(Election.id == election_id).first()
 
     if not election:
@@ -71,22 +59,14 @@ def getElectionResults(
                 detail="You are not eligible to view this election",
             )
 
-    now = now_sgt()
-
-    is_completed = election.status == ElectionStatus.completed
-    is_ended = election.status == ElectionStatus.active and election.end_date is not None and election.end_date < now
-
-    if not is_completed and not is_ended:
+    # Results are only published for completed elections. Nothing here transitions
+    # status — an active election past its end date stays "in progress" until the
+    # organizer explicitly closes it via POST /elections/{id}/close.
+    if election.status != ElectionStatus.completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Results are not yet available. The election is still in progress.",
         )
-
-    # Auto-transition status so the rest of the system reflects reality
-    if is_ended and not is_completed:
-        election.status = ElectionStatus.completed
-        db.commit()
-        db.refresh(election)
 
     candidates = db.query(Candidate).filter(Candidate.election_id == election.id).all()
 
@@ -96,67 +76,39 @@ def getElectionResults(
             detail="Election has no candidates",
         )
 
-    ballots = db.query(Ballot).filter(Ballot.election_id == election.id).all()
-    candidate_ids = [str(c.id) for c in candidates]
-
-    if election.public_key_n:
-        pk = deserialize_public_key(election.public_key_n)
-        # Private key lives in the encrypted keystore, fetched at tally time only
-        sk = load_private_key(db, election)
-        tally = homomorphic_tally(pk, sk, [b.encrypted_vote for b in ballots], candidate_ids)
-    else:
-        tally = _legacy_tally(candidates, ballots)
-
-    published_at = datetime.utcnow()
-
-    # Upsert candidate_results rows
-    for candidate_id_str, total_votes in tally.items():
-        candidate_id = UUID(candidate_id_str)
-
-        result_row = (
-            db.query(CandidateResult)
-            .filter(
-                CandidateResult.election_id == election.id,
-                CandidateResult.candidate_id == candidate_id,
-            )
-            .first()
-        )
-
-        if result_row:
-            result_row.total_votes = total_votes
-            result_row.published_at = published_at
-        else:
-            result_row = CandidateResult(
-                election_id=election.id,
-                candidate_id=candidate_id,
-                total_votes=total_votes,
-                published_at=published_at,
-            )
-            db.add(result_row)
-
-    db.commit()
+    # Read the cached results produced at close time. No decryption happens here.
+    result_rows = (
+        db.query(CandidateResult)
+        .filter(CandidateResult.election_id == election.id)
+        .all()
+    )
+    totals = {str(row.candidate_id): row.total_votes for row in result_rows}
+    published_at = next(
+        (row.published_at for row in result_rows if row.published_at is not None),
+        None,
+    )
 
     result_items = sorted(
         [
             CandidateResultResponse(
                 candidate_id=candidate.id,
                 candidate_name=candidate.name,
-                total_votes=tally[str(candidate.id)],
+                total_votes=totals.get(str(candidate.id), 0),
                 published_at=published_at,
             )
             for candidate in candidates
         ],
-        key=lambda r: r.total_votes,
+        key=lambda item: item.total_votes,
         reverse=True,
     )
 
-    total_votes = sum(r.total_votes for r in result_items)
+    total_votes = sum(item.total_votes for item in result_items)
 
     winner = None
     tied_candidates: list[str] = []
     if result_items and total_votes > 0:
         top_votes = result_items[0].total_votes
-        leaders = [r.candidate_name for r in result_items if r.total_votes == top_votes]
+        leaders = [item.candidate_name for item in result_items if item.total_votes == top_votes]
         if len(leaders) > 1:
             tied_candidates = leaders
         else:
