@@ -30,6 +30,15 @@ from app.schemas.election_voter_schema import (
 router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
+def _eligibility_details(change: str, voter_id: UUID) -> str:
+    """
+    Stable, minimal details string for an eligibility_changed audit event. Records
+    only the administrative change type and the target voter's user UUID — never an
+    email, name, external id, or any ballot/secret material.
+    """
+    return f"change={change};voter_id={voter_id}"
+
+
 def _validate_ballot_configuration(
     ballot_type: BallotType,
     max_selections: int,
@@ -209,6 +218,16 @@ def createElection(
             voter_id=voter.id,
             eligibility_status=EligibilityStatus.eligible,
         ))
+        # One audit event per voter actually added, in the same transaction — a later
+        # rollback in this loop discards these along with the memberships.
+        log_event(
+            db,
+            actor_user_id=current_organizer.id,
+            action="eligibility_changed",
+            entity_type="election",
+            entity_id=election.id,
+            details=_eligibility_details("added", voter.id),
+        )
 
     db.commit()
 
@@ -615,6 +634,17 @@ def addEligibleVoter(
     )
 
     db.add(election_voter)
+
+    # Audit the membership change in the same transaction as the change itself, so a
+    # rollback (e.g. the IntegrityError below) discards both.
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="eligibility_changed",
+        entity_type="election",
+        entity_id=election.id,
+        details=_eligibility_details("added", voter.id),
+    )
 
     try:
         db.commit()
