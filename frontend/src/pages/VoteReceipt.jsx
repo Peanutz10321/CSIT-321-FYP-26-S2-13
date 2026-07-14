@@ -1,22 +1,28 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getVoteDetails, getElectionDetails, getCurrentUser } from '../utils/api'
 
 function VoteReceipt() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { voteId } = useParams()
+
+  // The plaintext selection only exists in the immediate submission response,
+  // passed here through in-memory router state. It is never persisted, so a
+  // receipt opened from history or after a refresh cannot (and must not try to)
+  // reconstruct the choice. Only trust state that matches this route's vote id.
+  const submittedVote = location.state?.submittedVote
+  const isImmediate = Boolean(submittedVote && submittedVote.id === voteId)
   const [vote, setVote] = useState(null)
   const [election, setElection] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  // A missing vote id is known before any fetch, so it is derived at
+  // initialization instead of being set inside the effect.
+  const [loading, setLoading] = useState(() => Boolean(voteId))
+  const [error, setError] = useState(() => (voteId ? null : 'No vote ID provided'))
 
   useEffect(() => {
-    if (!voteId) {
-      setError('No vote ID provided')
-      setLoading(false)
-      return
-    }
+    if (!voteId) return
 
     Promise.all([
       getCurrentUser(),
@@ -56,6 +62,19 @@ function VoteReceipt() {
 
   const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
 
+  let selectionDisplay = null
+  if (isImmediate) {
+    if (submittedVote.abstained) {
+      selectionDisplay = 'Abstained'
+    } else if (submittedVote.candidate_names?.length > 0) {
+      selectionDisplay = submittedVote.candidate_names.join(', ')
+    } else if (submittedVote.candidate_name) {
+      selectionDisplay = submittedVote.candidate_name
+    } else {
+      selectionDisplay = '—'
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-xl space-y-8">
@@ -72,8 +91,12 @@ function VoteReceipt() {
               {election.title}
             </p>
             <p>
-              <span className="font-semibold text-slate-100">Candidates: </span>
+              <span className="font-semibold text-slate-100">Election Candidates: </span>
               {candidateNames}
+            </p>
+            <p>
+              <span className="font-semibold text-slate-100">Receipt Code: </span>
+              {vote.receipt_code ?? '—'}
             </p>
             <p>
               <span className="font-semibold text-slate-100">Election Commence Date And Time: </span>
@@ -92,8 +115,15 @@ function VoteReceipt() {
               {election.organizer_username ?? '—'}
             </p>
             <p>
-              <span className="font-semibold text-slate-100">Candidate Voted: </span>
-              {vote.candidate_name ?? '—'}
+              <span className="font-semibold text-slate-100">Your Selection: </span>
+              {isImmediate ? (
+                selectionDisplay
+              ) : (
+                <span className="text-slate-400">
+                  Your selection is not retained in plaintext and is only shown
+                  immediately after submission.
+                </span>
+              )}
             </p>
           </div>
         </div>
