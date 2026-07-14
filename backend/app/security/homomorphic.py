@@ -51,6 +51,26 @@ def encrypt_vote(pk: PaillierPublicKey, candidate_ids: list[str], voted_id: str)
     return json.dumps(result)
 
 
+def encrypt_ballot(pk: PaillierPublicKey, candidate_ids: list[str], selected_ids: list[str]) -> str:
+    """
+    Encrypts a multi-hot vote vector using Paillier. Every selected candidate gets
+    E(1) and every other candidate gets E(0); an abstention (empty selection) is an
+    all-zero — but still genuinely encrypted and freshly randomized — vector.
+
+    The output shape matches encrypt_vote exactly ({candidate_id: {c, e}} over all
+    candidate_ids), so homomorphic_tally sums it per candidate with no changes: each
+    selected candidate contributes +1, an abstention contributes +0 to everyone.
+    Zero entries go through _enc_to_dict (be_secure=True), so they are real Paillier
+    ciphertexts, never plaintext-zero placeholders. encrypt_vote is left untouched.
+    """
+    selected = set(selected_ids)
+    result = {
+        cid: _enc_to_dict(pk.encrypt(1 if cid in selected else 0))
+        for cid in candidate_ids
+    }
+    return json.dumps(result)
+
+
 def homomorphic_tally(
     pk: PaillierPublicKey,
     sk: PaillierPrivateKey,

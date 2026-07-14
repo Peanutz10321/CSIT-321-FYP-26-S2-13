@@ -9,6 +9,7 @@ from app.database import SessionLocal
 from app.models.election import Election, ElectionStatus
 from app.models.candidate_result import CandidateResult
 from app.models.audit_log import AuditLog
+from app.models.ballot import Ballot
 
 
 client = TestClient(app)
@@ -789,3 +790,216 @@ class TestLegacyCompleteEndpoint:
         response = complete_election(voter_token, election["id"])
         assert response.status_code == 403
         assert count_result_rows(election["id"]) == 0
+
+
+def multi_ballot_election_payload(num_candidates: int = 3, max_selections: int = 2) -> dict:
+    now = datetime.utcnow()
+    return {
+        "title": unique_text("Multi Ballot Results Election"),
+        "description": "multi-select results characterization",
+        "start_date": (now - timedelta(minutes=10)).isoformat(),
+        "end_date": (now + timedelta(hours=24)).isoformat(),
+        "candidates": [
+            {"name": unique_text(f"Cand{i}"), "description": f"C{i}", "photo_url": None, "display_order": i + 1}
+            for i in range(num_candidates)
+        ],
+        "ballot_type": "multi",
+        "max_selections": max_selections,
+    }
+
+
+def create_multi_ballot_election(organizer_token: str, num_candidates: int = 3, max_selections: int = 2) -> dict:
+    response = client.post(
+        f"{ELECTION_BASE}/draft",
+        json=multi_ballot_election_payload(num_candidates, max_selections),
+        headers=auth_header(organizer_token),
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def submit_selection(voter_token: str, election_id: str, candidate_ids: list):
+    return client.post(
+        VOTE_BASE,
+        json={"election_id": election_id, "candidate_ids": candidate_ids},
+        headers=auth_header(voter_token),
+    )
+
+
+def register_and_add_voters(organizer_token: str, election_id: str, count: int) -> list:
+    tokens = []
+    for _ in range(count):
+        voter = register_user("voter")
+        tokens.append(login_user(voter["email"]))
+        add_voter_to_election(organizer_token, election_id, voter)
+    return tokens
+
+
+class TestMultiSelectAbstentionResults:
+    def test_multi_select_known_tally_and_turnout(self, organizer_token):
+        """Candidate totals count each selection; turnout counts ballots. With a
+        multi-select ballot and an abstention the two diverge."""
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        a, b, c = [cand["id"] for cand in election["candidates"]]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 3)
+        activate_election(organizer_token, election["id"])
+
+        assert submit_selection(tokens[0], election["id"], [a, b]).status_code == 201  # 2 selections
+        assert submit_selection(tokens[1], election["id"], [a, c]).status_code == 201  # 2 selections
+        assert submit_selection(tokens[2], election["id"], []).status_code == 201       # abstention
+
+        close_election(organizer_token, election["id"])
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        results_by_candidate = {item["candidate_id"]: item["total_votes"] for item in data["results"]}
+        assert results_by_candidate == {a: 2, b: 1, c: 1}
+        # Turnout is 3 ballots cast — NOT the sum of candidate totals (4).
+        assert data["total_votes"] == 3
+        assert sum(results_by_candidate.values()) == 4
+
+    def test_all_abstentions_count_as_turnout_with_zero_candidate_totals(self, organizer_token):
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        a, b, c = [cand["id"] for cand in election["candidates"]]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 2)
+        activate_election(organizer_token, election["id"])
+
+        for token in tokens:
+            assert submit_selection(token, election["id"], []).status_code == 201
+
+        close_election(organizer_token, election["id"])
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        assert data["total_votes"] == 2  # turnout
+        assert {item["candidate_id"]: item["total_votes"] for item in data["results"]} == {a: 0, b: 0, c: 0}
+        assert data["winner"] is None
+        assert data["tied_candidates"] == []
+
+    def test_abstention_stored_as_real_encrypted_zero_vector(self, organizer_token):
+        import json
+
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        candidate_ids = [cand["id"] for cand in election["candidates"]]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 1)
+        activate_election(organizer_token, election["id"])
+        assert submit_selection(tokens[0], election["id"], []).status_code == 201
+
+        db = SessionLocal()
+        try:
+            ballot = db.query(Ballot).filter(Ballot.election_id == UUID(election["id"])).first()
+            assert ballot is not None
+            parsed = json.loads(ballot.encrypted_vote)
+            # All candidates present; each entry is a real Paillier ciphertext, not "0".
+            assert set(parsed.keys()) == set(candidate_ids)
+            for entry in parsed.values():
+                assert entry["c"] != "0"
+                assert len(entry["c"]) > 10
+        finally:
+            db.close()
+
+    def test_stored_multi_select_ballot_reveals_no_plaintext_selection(self, organizer_token):
+        import json
+
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        candidates = election["candidates"]
+        selected = [candidates[0]["id"], candidates[1]["id"]]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 1)
+        activate_election(organizer_token, election["id"])
+        assert submit_selection(tokens[0], election["id"], selected).status_code == 201
+
+        db = SessionLocal()
+        try:
+            ballot = db.query(Ballot).filter(Ballot.election_id == UUID(election["id"])).first()
+            assert ballot is not None
+
+            # Candidate names never appear in plaintext.
+            for cand in candidates:
+                assert cand["name"] not in ballot.encrypted_vote
+                assert cand["name"] not in ballot.vote_hash
+                # The salted hash cannot encode/brute-force the choice.
+                assert cand["id"] not in ballot.vote_hash
+
+            # Every candidate is a key (multi-hot structure), so the key set does not
+            # reveal which candidates were selected — the selection is only in the
+            # encrypted values.
+            parsed = json.loads(ballot.encrypted_vote)
+            assert set(parsed.keys()) == {cand["id"] for cand in candidates}
+        finally:
+            db.close()
+
+    def test_audit_log_hides_selections_and_abstention(self, organizer_token):
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        candidates = election["candidates"]
+        a, b = candidates[0]["id"], candidates[1]["id"]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 2)
+        activate_election(organizer_token, election["id"])
+        assert submit_selection(tokens[0], election["id"], [a, b]).status_code == 201
+        assert submit_selection(tokens[1], election["id"], []).status_code == 201  # abstention
+
+        db = SessionLocal()
+        try:
+            rows = db.query(AuditLog).filter(AuditLog.action == "vote_cast").all()
+            election_rows = [r for r in rows if f"election={election['id']}" in (r.details or "")]
+            assert len(election_rows) == 2
+            for row in election_rows:
+                details = row.details or ""
+                for cand in candidates:
+                    assert cand["id"] not in details
+                    assert cand["name"] not in details
+                assert "abstain" not in details.lower()
+        finally:
+            db.close()
+
+    def test_multi_close_tallies_once_and_repeated_get_is_stable(self, organizer_token):
+        election = create_multi_ballot_election(organizer_token, num_candidates=3, max_selections=2)
+        a, b, _c = [cand["id"] for cand in election["candidates"]]
+
+        tokens = register_and_add_voters(organizer_token, election["id"], 2)
+        activate_election(organizer_token, election["id"])
+        assert submit_selection(tokens[0], election["id"], [a, b]).status_code == 201
+        assert submit_selection(tokens[1], election["id"], []).status_code == 201  # abstention
+
+        close_election(organizer_token, election["id"])
+        rows_after_close = count_result_rows(election["id"])
+
+        # Second close rejected — the tally runs exactly once, no duplicate rows.
+        second = client.post(
+            f"{ELECTION_BASE}/{election['id']}/close",
+            headers=auth_header(organizer_token),
+        )
+        assert second.status_code == 400
+        assert count_result_rows(election["id"]) == rows_after_close == 3
+
+        # Repeated GET is stable and writes nothing.
+        first_get = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        rows_before = count_result_rows(election["id"])
+        second_get = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        rows_after = count_result_rows(election["id"])
+
+        assert first_get.status_code == 200 and second_get.status_code == 200
+        assert first_get.json() == second_get.json()
+        assert rows_before == rows_after == 3
+        # Turnout counts the multi ballot and the abstention as one each.
+        assert first_get.json()["total_votes"] == 2

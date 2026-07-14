@@ -321,3 +321,203 @@ class TestVoteHistory:
 
         assert response.status_code == 400
         assert "invalid date period" in response.json()["detail"].lower()
+
+
+def multi_election_payload(num_candidates: int = 3, max_selections: int = 2) -> dict:
+    now = datetime.utcnow()
+    return {
+        "title": unique_text("Multi Select Election"),
+        "description": "Multi-select election",
+        "start_date": (now - timedelta(minutes=10)).isoformat(),
+        "end_date": (now + timedelta(hours=24)).isoformat(),
+        "candidates": [
+            {"name": unique_text(f"Cand{i}"), "description": f"C{i}", "photo_url": None, "display_order": i + 1}
+            for i in range(num_candidates)
+        ],
+        "ballot_type": "multi",
+        "max_selections": max_selections,
+    }
+
+
+def prepare_active_multi_election(organizer_token, voter_users, num_candidates=3, max_selections=2):
+    response = client.post(
+        f"{ELECTION_BASE}/draft",
+        json=multi_election_payload(num_candidates, max_selections),
+        headers=auth_header(organizer_token),
+    )
+    assert response.status_code == 201, response.text
+    election = response.json()
+
+    for voter_user in voter_users:
+        add_voter_to_election(organizer_token, election["id"], voter_user)
+
+    activate_election(organizer_token, election["id"])
+    return election
+
+
+class TestVoteSelectionContract:
+    def test_legacy_candidate_id_single_vote_succeeds(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        candidate = election["candidates"][0]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_id": candidate["id"]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        # Legacy receipt behavior preserved.
+        assert data["candidate_name"] == candidate["name"]
+        assert data["candidate_names"] == [candidate["name"]]
+        assert data["abstained"] is False
+
+    def test_candidate_ids_single_selection_succeeds(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        candidate = election["candidates"][0]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": [candidate["id"]]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data["candidate_name"] == candidate["name"]
+        assert data["candidate_names"] == [candidate["name"]]
+        assert data["abstained"] is False
+
+    def test_both_candidate_fields_rejected(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        candidate_id = election["candidates"][0]["id"]
+
+        response = client.post(
+            VOTE_BASE,
+            json={
+                "election_id": election["id"],
+                "candidate_id": candidate_id,
+                "candidate_ids": [candidate_id],
+            },
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+        assert "both" in response.json()["detail"].lower() or "either" in response.json()["detail"].lower()
+
+    def test_missing_both_selection_fields_rejected(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+
+    def test_single_ballot_rejects_multiple_selections(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)  # single ballot
+        ids = [c["id"] for c in election["candidates"]]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": ids},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+        assert "single" in response.json()["detail"].lower()
+
+    def test_abstention_succeeds(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": []},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data["abstained"] is True
+        assert data["candidate_names"] == []
+        assert data["candidate_name"] is None
+
+    def test_double_vote_rejected_after_abstention(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        first = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": []},
+            headers=auth_header(voter_token),
+        )
+        assert first.status_code == 201, first.text
+
+        second = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": [election["candidates"][0]["id"]]},
+            headers=auth_header(voter_token),
+        )
+        assert second.status_code == 400
+        assert "already" in second.json()["detail"].lower()
+
+
+class TestMultiSelectVoting:
+    def test_multi_ballot_accepts_up_to_max_selections(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_multi_election(organizer_token, [voter_user], num_candidates=3, max_selections=2)
+        ids = [c["id"] for c in election["candidates"]]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": ids[:2]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert len(data["candidate_names"]) == 2
+        assert data["candidate_name"] is None  # more than one selection
+        assert data["abstained"] is False
+
+    def test_multi_ballot_rejects_over_max_selections(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_multi_election(organizer_token, [voter_user], num_candidates=3, max_selections=2)
+        ids = [c["id"] for c in election["candidates"]]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": ids},  # 3 > max 2
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+        assert "at most" in response.json()["detail"].lower()
+
+    def test_duplicate_candidate_ids_rejected(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_multi_election(organizer_token, [voter_user], num_candidates=3, max_selections=2)
+        candidate_id = election["candidates"][0]["id"]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": [candidate_id, candidate_id]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+        assert "duplicate" in response.json()["detail"].lower()
+
+    def test_candidate_from_another_election_rejected(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_multi_election(organizer_token, [voter_user], num_candidates=3, max_selections=2)
+        other_election = create_election_as_organizer(organizer_token)
+        foreign_id = other_election["candidates"][0]["id"]
+        own_id = election["candidates"][0]["id"]
+
+        response = client.post(
+            VOTE_BASE,
+            json={"election_id": election["id"], "candidate_ids": [own_id, foreign_id]},
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 400
+        assert "candidate" in response.json()["detail"].lower()

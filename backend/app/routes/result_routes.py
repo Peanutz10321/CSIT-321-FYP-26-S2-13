@@ -8,6 +8,7 @@ from app.models.user import User, UserRole
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.models.candidate_result import CandidateResult
+from app.models.ballot import Ballot
 from app.models.election_voter import ElectionVoter
 from app.schemas.result_schema import ElectionResultResponse, CandidateResultResponse
 from app.security.security import get_current_user
@@ -102,11 +103,19 @@ def getElectionResults(
         reverse=True,
     )
 
-    total_votes = sum(item.total_votes for item in result_items)
+    # total_votes is turnout (ballots cast), NOT the sum of candidate totals: a
+    # multi-select ballot adds to several candidates yet is one ballot, and an
+    # abstention adds to none yet is still one ballot. A read-only COUNT keeps this
+    # endpoint side-effect-free — no tally, key load, write, commit, or transition.
+    total_votes = (
+        db.query(Ballot).filter(Ballot.election_id == election.id).count()
+    )
 
+    # Winner/tie are decided by candidate totals, so gate on the top candidate total
+    # (an all-abstention election has turnout > 0 but no winner).
     winner = None
     tied_candidates: list[str] = []
-    if result_items and total_votes > 0:
+    if result_items and result_items[0].total_votes > 0:
         top_votes = result_items[0].total_votes
         leaders = [item.candidate_name for item in result_items if item.total_votes == top_votes]
         if len(leaders) > 1:
