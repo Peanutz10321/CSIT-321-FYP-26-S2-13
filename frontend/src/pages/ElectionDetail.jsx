@@ -90,6 +90,13 @@ function ElectionDetail() {
             </div>
 
             <p>
+              <span className="font-semibold text-slate-100">Ballot Type: </span>
+              {election.ballot_type === 'multi'
+                ? `Multiple choice — up to ${election.max_selections ?? 1} selections`
+                : 'Single choice'}
+            </p>
+
+            <p>
               <span className="font-semibold text-slate-100">Deadline: </span>
               {election.end_date ? new Date(election.end_date).toLocaleDateString() : '—'}
             </p>

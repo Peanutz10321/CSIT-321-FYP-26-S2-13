@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getElectionDetails, getElectionResults, getEligibleVoters } from '../utils/api.js'
 
+// Defined at module level so React does not recreate the component on each render.
+const Row = ({ label, children }) => (
+  <div className="border-b border-slate-700 py-4">
+    <span className="font-semibold text-slate-100">{label}: </span>
+    <span className="text-slate-300">{children}</span>
+  </div>
+)
+
 function ElectionResults() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -62,17 +70,14 @@ function ElectionResults() {
 
   const resultsError = results?._error ?? null
   const resultsList = results?.results ?? []
+  // Turnout comes straight from the backend (ballots cast). It must never be
+  // recomputed by summing candidate totals: a multi-select ballot counts toward
+  // several candidates but is one ballot, and an abstention counts toward none.
   const totalVotes = results?.total_votes ?? 0
   const tiedCandidates = results?.tied_candidates ?? []
   const winner = results?.winner ?? '—'
   const candidateNames = election.candidates?.map((c) => c.name).join(', ') || '—'
-
-  const Row = ({ label, children }) => (
-    <div className="border-b border-slate-700 py-4">
-      <span className="font-semibold text-slate-100">{label}: </span>
-      <span className="text-slate-300">{children}</span>
-    </div>
-  )
+  const isMulti = election.ballot_type === 'multi'
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-10">
@@ -90,7 +95,12 @@ function ElectionResults() {
             <Row label="End Date And Time">
               {election.end_date ? new Date(election.end_date).toLocaleString() : '—'}
             </Row>
-            <Row label="Total Votes Cast">
+            <Row label="Ballot Type">
+              {isMulti
+                ? `Multiple choice — up to ${election.max_selections ?? 1} selections`
+                : 'Single choice'}
+            </Row>
+            <Row label="Total Ballots Cast">
               {resultsError ? '—' : totalVotes}
             </Row>
             {role === 'organizer' ? (
@@ -102,7 +112,7 @@ function ElectionResults() {
                 {election.organizer_username ?? '—'}
               </Row>
             )}
-            <Row label="Number Of Votes Per Candidate">
+            <Row label={isMulti ? 'Selections Per Candidate' : 'Votes Per Candidate'}>
               {resultsError ? (
                 <span className="text-amber-400">{resultsError}</span>
               ) : resultsList.length === 0 ? (

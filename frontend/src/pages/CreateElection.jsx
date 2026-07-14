@@ -13,6 +13,9 @@ function CreateElection() {
   const [endDate, setEndDate] = useState('')
   const [candidatesText, setCandidatesText] = useState('')
   const [eligibleVotersText, setEligibleVotersText] = useState('')
+  const [ballotType, setBallotType] = useState('single')
+  const [maxSelections, setMaxSelections] = useState('1')
+  const [ballotError, setBallotError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [drafts, setDrafts] = useState([])
   const [selectedDraftId, setSelectedDraftId] = useState(null)
@@ -44,7 +47,24 @@ function CreateElection() {
       display_order: index + 1,
     })),
     eligible_voter_external_ids: voters,
+    ballot_type: ballotType,
+    max_selections: ballotType === 'single' ? 1 : Number(maxSelections),
   })
+
+  // Drafts may hold an incomplete configuration (backend re-validates the candidate
+  // count at activation), so the count rule only applies to final active creation.
+  // Invalid values are reported inline — never silently clamped.
+  const validateBallotConfig = (candidateCount, forActiveCreate) => {
+    if (ballotType === 'single') return null
+    const max = Number(maxSelections)
+    if (!Number.isInteger(max) || max < 1) {
+      return 'Maximum selections must be a whole number of at least 1.'
+    }
+    if (forActiveCreate && max > candidateCount) {
+      return `Maximum selections cannot exceed the number of candidates (${candidateCount}).`
+    }
+    return null
+  }
 
   const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
 
@@ -53,6 +73,9 @@ function CreateElection() {
     setTitle(draft.title)
     setCandidatesText(draft.candidates.map((c) => c.name).join(', '))
     setEndDate(draft.end_date ? draft.end_date.slice(0, 16) : '')
+    setBallotType(draft.ballot_type || 'single')
+    setMaxSelections(String(draft.max_selections ?? 1))
+    setBallotError(null)
     try {
       const voters = await getEligibleVoters(draft.id)
       setEligibleVotersText(voters.map((v) => v.voter_external_id).join(', '))
@@ -67,6 +90,9 @@ function CreateElection() {
     setCandidatesText('')
     setEndDate('')
     setEligibleVotersText('')
+    setBallotType('single')
+    setMaxSelections('1')
+    setBallotError(null)
   }
 
   const handleSaveDraft = async () => {
@@ -74,6 +100,13 @@ function CreateElection() {
       alert('Please key in something at least before saving.')
       return
     }
+
+    const configError = validateBallotConfig(parseList(candidatesText).length, false)
+    if (configError) {
+      setBallotError(configError)
+      return
+    }
+    setBallotError(null)
 
     setSaving(true)
     try {
@@ -87,9 +120,18 @@ function CreateElection() {
   }
 
   const handleCreate = async () => {
+    const candidateNames = parseList(candidatesText)
+
+    const configError = validateBallotConfig(candidateNames.length, true)
+    if (configError) {
+      setBallotError(configError)
+      return
+    }
+    setBallotError(null)
+
     setSaving(true)
     try {
-      const election = await createElection(buildPayload(parseList(candidatesText), parseList(eligibleVotersText)))
+      const election = await createElection(buildPayload(candidateNames, parseList(eligibleVotersText)))
       navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'organizer' } })
     } catch {
       alert('Missing field or invalid input detected. Please key in again.')
@@ -187,6 +229,64 @@ function CreateElection() {
                     className={inputClass}
                   />
                 </div>
+
+                <fieldset className="space-y-3">
+                  <legend className="font-semibold text-slate-100">Ballot Type:</legend>
+                  <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:gap-8">
+                    <label className="flex cursor-pointer items-center gap-3 py-1 text-slate-100">
+                      <input
+                        type="radio"
+                        name="ballot-type"
+                        value="single"
+                        checked={ballotType === 'single'}
+                        onChange={() => {
+                          setBallotType('single')
+                          setBallotError(null)
+                        }}
+                        className="h-5 w-5 cursor-pointer accent-blue-500"
+                      />
+                      Single choice
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-3 py-1 text-slate-100">
+                      <input
+                        type="radio"
+                        name="ballot-type"
+                        value="multi"
+                        checked={ballotType === 'multi'}
+                        onChange={() => {
+                          setBallotType('multi')
+                          setBallotError(null)
+                        }}
+                        className="h-5 w-5 cursor-pointer accent-blue-500"
+                      />
+                      Multiple choice
+                    </label>
+                  </div>
+                  {ballotType === 'multi' && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                      <label htmlFor="max-selections" className="text-sm text-slate-300">
+                        Maximum selections
+                      </label>
+                      <input
+                        id="max-selections"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={maxSelections}
+                        onChange={(e) => {
+                          setMaxSelections(e.target.value)
+                          setBallotError(null)
+                        }}
+                        className="w-28 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
+                      />
+                    </div>
+                  )}
+                  {ballotError && (
+                    <p role="alert" className="text-sm text-rose-400">
+                      {ballotError}
+                    </p>
+                  )}
+                </fieldset>
 
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4">
                   <span className={`${labelClass} sm:pt-3`}>Eligible Voter External IDs:</span>
