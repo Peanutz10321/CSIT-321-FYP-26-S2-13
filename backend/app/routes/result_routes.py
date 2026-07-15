@@ -11,6 +11,7 @@ from app.models.candidate_result import CandidateResult
 from app.models.ballot import Ballot
 from app.models.election_voter import ElectionVoter
 from app.schemas.result_schema import ElectionResultResponse, CandidateResultResponse
+from app.routes.election_routes import auto_finalize_if_expired
 from app.security.security import get_current_user
 
 
@@ -24,12 +25,17 @@ def getElectionResults(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Read-only view of an election's published results.
+    View an election's published results.
 
-    Results are computed and persisted exactly once when the organizer closes the
-    election (POST /elections/{id}/close). This endpoint only ever reads the cached
-    candidate_results — it never decrypts ballots, loads the private key, runs a
-    tally, writes, commits, or transitions the election status.
+    Results are computed and persisted exactly once by the shared close/tally
+    workflow. Normally that happens when the organizer explicitly closes the
+    election (POST /elections/{id}/close); if the deadline has passed while the
+    election is still active, this endpoint finalizes it once through that same
+    workflow (auto_finalize_if_expired) so results are available after the deadline
+    without a manual close.
+
+    Once an election is completed this is a pure read of the cached
+    candidate_results — no tally, no private-key load, no write, no status change.
     """
     election = db.query(Election).filter(Election.id == election_id).first()
 
@@ -60,9 +66,15 @@ def getElectionResults(
                 detail="You are not eligible to view this election",
             )
 
-    # Results are only published for completed elections. Nothing here transitions
-    # status — an active election past its end date stays "in progress" until the
-    # organizer explicitly closes it via POST /elections/{id}/close.
+    # An election whose deadline has passed is finalized here exactly once, using the
+    # same locked close/tally workflow as the explicit close endpoints. This is a
+    # no-op for drafts, for elections still inside their voting period, and for
+    # already-completed elections — so the ordinary read path below stays
+    # side-effect-free and is never re-tallied.
+    auto_finalize_if_expired(db, election.id)
+
+    # Results are only published for completed elections. An active election that is
+    # still within its voting period stays "in progress".
     if election.status != ElectionStatus.completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

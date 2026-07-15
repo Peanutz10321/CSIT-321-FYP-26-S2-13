@@ -704,49 +704,39 @@ def getEligibleVoters(
         for election_voter, voter in voter_records
     ]
 
-def _finalize_election_close(db: Session, election_id: UUID, current_organizer: User) -> Election:
+def _locked_election(db: Session, election_id: UUID) -> Election | None:
     """
-    Shared close/tally workflow behind both POST /{id}/close and the legacy
-    PATCH /{id}/complete, so no public path can mark an election completed without
-    also producing its cached results.
-
-    Runs the homomorphic tally exactly once, upserts candidate_results, flips the
-    status to completed, and records the election_closed + results_published audit
-    events — all in a single atomic commit. Returns the completed election.
-
-    Concurrency: the election row is taken with SELECT ... FOR UPDATE, so on
-    PostgreSQL a second concurrent request blocks on the lock, and once the first
-    transaction commits it re-reads the now-completed row and exits at the status
-    guard below — before any second tally. SQLAlchemy omits FOR UPDATE on SQLite
-    (which already serializes writers), so the same guard keeps SQLite correct.
+    Take the election row for this transaction. populate_existing() forces the
+    locked read to overwrite any copy already loaded in the session, so a caller
+    that had read the row earlier (e.g. the results endpoint) still re-reads the
+    committed state under the lock rather than a stale in-session copy.
     """
-    election = (
+    return (
         db.query(Election)
         .filter(Election.id == election_id)
+        .populate_existing()
         .with_for_update()
         .first()
     )
 
-    if not election:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Election not found",
-        )
 
-    if election.organizer_id != current_organizer.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only close elections that you created",
-        )
+def _tally_and_complete(
+    db: Session,
+    election: Election,
+    actor_user_id: UUID,
+    close_reason: str | None = None,
+) -> None:
+    """
+    Core close/tally workflow — the single place the tally is ever run.
 
-    # Re-validated on the locked row: a request that was blocked on the lock now
-    # sees completed and stops here, so the tally never runs twice.
-    if election.status != ElectionStatus.active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only active elections can be closed",
-        )
+    The caller must already hold the election row lock and have verified the
+    election is active. Runs the homomorphic tally exactly once, upserts
+    candidate_results, flips the status to completed, and records the
+    election_closed + results_published audit events — all in one atomic commit.
 
+    close_reason is recorded on the audit events so an automatic deadline close is
+    distinguishable from an organizer-initiated one; it never carries ballot data.
+    """
     candidates = (
         db.query(Candidate)
         .filter(Candidate.election_id == election.id)
@@ -811,22 +801,63 @@ def _finalize_election_close(db: Session, election_id: UUID, current_organizer: 
 
     election.status = ElectionStatus.completed
 
+    details = f"reason={close_reason}" if close_reason else None
+
     log_event(
         db,
-        actor_user_id=current_organizer.id,
+        actor_user_id=actor_user_id,
         action="election_closed",
         entity_type="election",
         entity_id=election.id,
+        details=details,
     )
     log_event(
         db,
-        actor_user_id=current_organizer.id,
+        actor_user_id=actor_user_id,
         action="results_published",
         entity_type="election",
         entity_id=election.id,
+        details=details,
     )
 
     db.commit()
+
+
+def _finalize_election_close(db: Session, election_id: UUID, current_organizer: User) -> Election:
+    """
+    Shared close/tally workflow behind both POST /{id}/close and the legacy
+    PATCH /{id}/complete, so no public path can mark an election completed without
+    also producing its cached results. Returns the completed election.
+
+    Concurrency: the election row is taken with SELECT ... FOR UPDATE, so on
+    PostgreSQL a second concurrent request blocks on the lock, and once the first
+    transaction commits it re-reads the now-completed row and exits at the status
+    guard below — before any second tally. SQLAlchemy omits FOR UPDATE on SQLite
+    (which already serializes writers), so the same guard keeps SQLite correct.
+    """
+    election = _locked_election(db, election_id)
+
+    if not election:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Election not found",
+        )
+
+    if election.organizer_id != current_organizer.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only close elections that you created",
+        )
+
+    # Re-validated on the locked row: a request that was blocked on the lock now
+    # sees completed and stops here, so the tally never runs twice.
+    if election.status != ElectionStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only active elections can be closed",
+        )
+
+    _tally_and_complete(db, election, current_organizer.id)
 
     return (
         db.query(Election)
@@ -834,6 +865,41 @@ def _finalize_election_close(db: Session, election_id: UUID, current_organizer: 
         .filter(Election.id == election.id)
         .first()
     )
+
+
+def auto_finalize_if_expired(db: Session, election_id: UUID) -> None:
+    """
+    Deadline-driven finalize. If an election is still active but its end_date has
+    passed, close it through the very same locked close/tally workflow the explicit
+    close endpoints use, so results exist after the deadline without an organizer
+    having to click close.
+
+    This is a no-op for anything else — drafts, already-completed elections,
+    elections still inside their voting period, and (defensively) an election that
+    was force-set active without a keypair, which would otherwise fail a read with a
+    tally error. Callers can therefore invoke it unconditionally.
+
+    The close is attributed to the election's own organizer with reason=deadline, so
+    the audit trail shows it was automatic rather than organizer-initiated — a voter
+    merely reading results never appears as the closer. The row is taken with
+    SELECT ... FOR UPDATE and re-read under the lock, so two concurrent readers
+    cannot both tally.
+    """
+    election = _locked_election(db, election_id)
+
+    if not election:
+        return
+
+    if election.status != ElectionStatus.active:
+        return
+
+    if election.end_date is None or election.end_date >= now_sgt():
+        return
+
+    if not election.public_key_n:
+        return
+
+    _tally_and_complete(db, election, election.organizer_id, close_reason="deadline")
 
 
 @router.patch("/{election_id}/complete", response_model=ElectionResponse)
