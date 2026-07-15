@@ -1003,3 +1003,208 @@ class TestMultiSelectAbstentionResults:
         assert rows_before == rows_after == 3
         # Turnout counts the multi ballot and the abstention as one each.
         assert first_get.json()["total_votes"] == 2
+
+
+def expire_election(election_id: str):
+    """Push an election's deadline into the past without touching its status."""
+    db = SessionLocal()
+    try:
+        election = db.query(Election).filter(Election.id == UUID(election_id)).first()
+        assert election is not None
+        election.end_date = datetime.utcnow() - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+
+
+def election_status(election_id: str):
+    db = SessionLocal()
+    try:
+        election = db.query(Election).filter(Election.id == UUID(election_id)).first()
+        assert election is not None
+        return election.status
+    finally:
+        db.close()
+
+
+class TestAutoFinalizeExpiredElection:
+    """An active election whose deadline has passed is finalized once, on demand,
+    through the same locked close/tally workflow as the explicit close endpoints."""
+
+    def test_expired_active_election_is_finalized_on_results_request(self, organizer_token):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        candidate_a, candidate_b, candidate_c = cast_two_one_one(election, voter_tokens)
+
+        expire_election(election["id"])
+        # Still active with nothing cached before the first read.
+        assert election_status(election["id"]) == ElectionStatus.active
+        assert count_result_rows(election["id"]) == 0
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] == "completed"
+        assert {item["candidate_id"]: item["total_votes"] for item in data["results"]} == {
+            candidate_a: 2,
+            candidate_b: 1,
+            candidate_c: 1,
+        }
+        assert data["total_votes"] == 4
+
+        # The tally was persisted, not merely computed for this response.
+        assert election_status(election["id"]) == ElectionStatus.completed
+        assert stored_result_map(election["id"]) == {
+            candidate_a: 2,
+            candidate_b: 1,
+            candidate_c: 1,
+        }
+        assert count_result_rows(election["id"]) == 3
+
+    def test_repeated_requests_do_not_retally_or_duplicate_results(
+        self, organizer_token, monkeypatch
+    ):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        cast_two_one_one(election, voter_tokens)
+        expire_election(election["id"])
+
+        first = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        assert first.status_code == 200, first.text
+        assert count_result_rows(election["id"]) == 3
+
+        # Once finalized, a later read must never reach the tally again. Poison the
+        # keystore lookup where the close workflow actually binds it.
+        import app.routes.election_routes as election_routes_module
+
+        def _forbidden(*args, **kwargs):
+            raise AssertionError("a finalized election must not be re-tallied")
+
+        monkeypatch.setattr(election_routes_module, "load_private_key", _forbidden)
+
+        second = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        assert second.status_code == 200, second.text
+        assert second.json() == first.json()
+        assert count_result_rows(election["id"]) == 3
+
+    def test_active_election_before_its_deadline_is_not_finalized(self, organizer_token):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        cast_two_one_one(election, voter_tokens)
+        # The deadline is still in the future — results stay unavailable.
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+
+        assert response.status_code == 400
+        assert "progress" in response.json()["detail"].lower()
+        assert election_status(election["id"]) == ElectionStatus.active
+        assert count_result_rows(election["id"]) == 0
+
+    def test_expired_draft_is_not_finalized(self, organizer_token):
+        election = create_three_candidate_election(organizer_token)  # never activated
+        expire_election(election["id"])
+
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+
+        assert response.status_code == 400
+        assert election_status(election["id"]) == ElectionStatus.draft
+        assert count_result_rows(election["id"]) == 0
+
+    def test_voter_reading_results_after_the_deadline_triggers_finalize(self, organizer_token):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        candidate_a, candidate_b, candidate_c = cast_two_one_one(election, voter_tokens)
+        expire_election(election["id"])
+
+        # An eligible voter — not the organizer — is the first to read the results.
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(voter_tokens[0]),
+        )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert {item["candidate_id"]: item["total_votes"] for item in data["results"]} == {
+            candidate_a: 2,
+            candidate_b: 1,
+            candidate_c: 1,
+        }
+        assert data["total_votes"] == 4
+        assert election_status(election["id"]) == ElectionStatus.completed
+
+    def test_auto_finalize_audits_the_close_as_the_organizer_with_a_deadline_reason(
+        self, organizer_user, organizer_token
+    ):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        cast_two_one_one(election, voter_tokens)
+        expire_election(election["id"])
+
+        # Triggered by a voter's read, but the close belongs to the organizer.
+        response = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(voter_tokens[0]),
+        )
+        assert response.status_code == 200, response.text
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(AuditLog)
+                .filter(AuditLog.entity_id == UUID(election["id"]))
+                .all()
+            )
+            close_rows = [row for row in rows if row.action == "election_closed"]
+            published_rows = [row for row in rows if row.action == "results_published"]
+
+            # Exactly one close/publish pair — the tally ran once.
+            assert len(close_rows) == 1
+            assert len(published_rows) == 1
+
+            for row in close_rows + published_rows:
+                # A voter merely reading results is never recorded as the closer.
+                assert row.actor_user_id == UUID(organizer_user["id"])
+                assert "deadline" in (row.details or "")
+                # The audit trail still never carries a ballot choice.
+                for candidate in election["candidates"]:
+                    assert candidate["id"] not in (row.details or "")
+        finally:
+            db.close()
+
+    def test_explicit_close_after_auto_finalize_is_rejected(self, organizer_token):
+        election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
+        candidate_a, candidate_b, candidate_c = cast_two_one_one(election, voter_tokens)
+        expire_election(election["id"])
+
+        first = client.get(
+            f"{RESULT_BASE}/elections/{election['id']}",
+            headers=auth_header(organizer_token),
+        )
+        assert first.status_code == 200, first.text
+
+        # The election is already completed, so the manual close must refuse rather
+        # than run a second tally or duplicate the cached rows.
+        close_response = client.post(
+            f"{ELECTION_BASE}/{election['id']}/close",
+            headers=auth_header(organizer_token),
+        )
+
+        assert close_response.status_code == 400
+        assert "active" in close_response.json()["detail"].lower()
+        assert count_result_rows(election["id"]) == 3
+        assert stored_result_map(election["id"]) == {
+            candidate_a: 2,
+            candidate_b: 1,
+            candidate_c: 1,
+        }

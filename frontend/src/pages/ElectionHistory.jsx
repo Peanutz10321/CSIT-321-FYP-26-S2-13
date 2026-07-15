@@ -107,9 +107,7 @@ function ElectionHistory() {
                   <div className="flex justify-end">
                     <button
                       onClick={() =>
-                        election.status === 'completed'
-                          ? navigate('/election-results', { state: { electionId: election.id, role } })
-                          : navigate('/election-detail', { state: { electionId: election.id } })
+                        navigate('/election-results', { state: { electionId: election.id, role } })
                       }
                       className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
                     >
