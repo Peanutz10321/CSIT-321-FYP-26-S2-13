@@ -18,11 +18,18 @@ function ActiveElections() {
   }, [navigate])
 
   useEffect(() => {
-    setLoading(true)
-    getActiveElections({ search: searchQuery })
-      .then(setActiveElections)
-      .catch(() => navigate('/login'))
-      .finally(() => setLoading(false))
+    async function loadActiveElections() {
+      setLoading(true)
+      try {
+        const data = await getActiveElections({ search: searchQuery })
+        setActiveElections(data)
+      } catch {
+        navigate('/login')
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadActiveElections()
   }, [searchQuery, navigate])
 
   const handleSearch = (e) => {

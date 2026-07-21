@@ -22,12 +22,19 @@ function ElectionHistory() {
   const role = returnPath.includes('organizer') ? 'organizer' : 'voter'
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    getElectionHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
-      .then((data) => setElections(data || []))
-      .catch((err) => setError(err.message || 'Failed to load election history.'))
-      .finally(() => setLoading(false))
+    async function loadElectionHistory() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getElectionHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
+        setElections(data || [])
+      } catch (err) {
+        setError(err.message || 'Failed to load election history.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadElectionHistory()
   }, [searchQuery, startDate, endDate])
 
   const handleSearch = (e) => {

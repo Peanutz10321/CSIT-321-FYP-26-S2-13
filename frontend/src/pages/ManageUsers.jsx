@@ -32,19 +32,23 @@ function ManageUsers() {
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    setLoading(true)
-    setError('')
-
-    listUsers({ search: searchQuery })
-      .then((data) => setUsers(data))
-      .catch((err) => {
+    async function loadUsers() {
+      setLoading(true)
+      setError('')
+      try {
+        const data = await listUsers({ search: searchQuery })
+        setUsers(data)
+      } catch (err) {
         if (err.message?.toLowerCase().includes('not authenticated')) {
           navigate('/login')
           return
         }
         setError(err.message || 'Failed to load users.')
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadUsers()
   }, [searchQuery, navigate])
 
   const handleSearch = (e) => {
