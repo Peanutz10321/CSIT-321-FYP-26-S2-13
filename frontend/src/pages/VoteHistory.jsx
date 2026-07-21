@@ -18,12 +18,19 @@ function VoteHistory() {
   const [endDate, setEndDate] = useState('')
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    getVoteHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
-      .then(setVoteHistory)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+    async function loadVoteHistory() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getVoteHistory({ search: searchQuery, start_date: startDate, end_date: endDate })
+        setVoteHistory(data)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadVoteHistory()
   }, [searchQuery, startDate, endDate])
 
   const handleSearch = (e) => {

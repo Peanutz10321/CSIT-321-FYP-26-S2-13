@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { addElectionVoter, createElection, decodeJwt } from './api.js'
 
 function mockFetchOnce(responseObj = {}) {
-  global.fetch = vi.fn().mockResolvedValue({
+  globalThis.fetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
     statusText: 'OK',
@@ -12,7 +12,7 @@ function mockFetchOnce(responseObj = {}) {
 }
 
 function lastRequestBody() {
-  const calls = global.fetch.mock.calls
+  const calls = globalThis.fetch.mock.calls
   const [, options] = calls[calls.length - 1]
   return JSON.parse(options.body)
 }
