@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, updateCurrentUser } from '../utils/api'
+import { Button, Card, Input, LoadingState, PageHeader, PageShell } from '../components/ui.jsx'
 
 function UpdateAccount() {
   const navigate = useNavigate()
@@ -58,69 +59,84 @@ function UpdateAccount() {
     }
   }
 
+  const labelClass = 'mb-2 block text-sm font-medium text-slate-200'
+
+  if (loading) {
+    return (
+      <PageShell width="max-w-xl">
+        <Card padded={false}>
+          <LoadingState message="Loading profile..." />
+        </Card>
+      </PageShell>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <h1 className="mt-3 text-3xl font-semibold text-slate-100">Update Account</h1>
-          <div className="mt-8 space-y-6">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-slate-300">
-                Username
-              </label>
-              <input
-                id="username"
-                name="username"
-                value={formValues.username}
-                onChange={handleInputChange}
-                type="text"
-                placeholder="Username"
-                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-              />
-            </div>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-300">
-                {role === 'organizer' ? 'Organizer Email' : 'Voter Email'}
-              </label>
-              <input
-                id="email"
-                name="email"
-                value={formValues.email}
-                onChange={handleInputChange}
-                type="email"
-                placeholder="Email"
-                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300">
-                New Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                value={formValues.password}
-                onChange={handleInputChange}
-                type="password"
-                placeholder="New Password"
-                className="mt-2 block w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-              />
-            </div>
+    <PageShell width="max-w-xl">
+      <PageHeader
+        eyebrow="Account"
+        title="Update Account"
+        actions={
+          <Button variant="secondary" onClick={() => navigate(-1)}>
+            Back
+          </Button>
+        }
+      />
+
+      <Card>
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="username" className={labelClass}>
+              Username
+            </label>
+            <Input
+              id="username"
+              name="username"
+              value={formValues.username}
+              onChange={handleInputChange}
+              type="text"
+              placeholder="Username"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="email" className={labelClass}>
+              {role === 'organizer' ? 'Organizer Email' : 'Voter Email'}
+            </label>
+            <Input
+              id="email"
+              name="email"
+              value={formValues.email}
+              onChange={handleInputChange}
+              type="email"
+              placeholder="Email"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="password" className={labelClass}>
+              New Password
+            </label>
+            <Input
+              id="password"
+              name="password"
+              value={formValues.password}
+              onChange={handleInputChange}
+              type="password"
+              autoComplete="new-password"
+              placeholder="New Password"
+            />
+            <p className="mt-1.5 text-xs text-slate-500">Leave blank to keep your current password.</p>
+          </div>
+
+          <div className="border-t border-slate-800 pt-6 sm:flex sm:justify-end">
+            <Button type="button" onClick={handleSave} disabled={saving} className="sm:w-auto">
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
           </div>
         </div>
-
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-2xl bg-blue-600 px-6 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
+      </Card>
+    </PageShell>
   )
 }
 
