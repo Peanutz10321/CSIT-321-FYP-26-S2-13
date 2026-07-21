@@ -64,8 +64,8 @@ describe('Landing page', () => {
   it('names the three user roles using the role names the app itself uses', () => {
     renderLanding()
 
-    expect(screen.getByRole('heading', { name: 'Voter (Student)' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Organizer (Teacher)' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Voter' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Organizer' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'System Admin' })).toBeInTheDocument()
   })
 
