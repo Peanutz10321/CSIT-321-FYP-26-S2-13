@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { viewUser, getCurrentUser, updateUserStatus } from '../utils/api.js'
+import {
+  Button,
+  Card,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  PageShell,
+  StatusBadge,
+} from '../components/ui.jsx'
 
 const STATUS_LABEL = {
   active: 'Active',
@@ -8,10 +17,20 @@ const STATUS_LABEL = {
   suspended: 'Suspended',
 }
 
-const STATUS_BADGE = {
-  active: 'text-green-400',
-  inactive: 'text-yellow-400',
-  suspended: 'text-red-400',
+const STATUS_TONE = {
+  active: 'emerald',
+  inactive: 'amber',
+  suspended: 'rose',
+}
+
+// Module-level so React does not recreate it on each render.
+function MetaRow({ label, children }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-slate-800/70 py-3 last:border-0 sm:flex-row sm:justify-between sm:gap-4">
+      <span className="text-sm font-medium text-slate-400">{label}</span>
+      <span className="text-sm text-slate-100 sm:text-right">{children}</span>
+    </div>
+  )
 }
 
 function AdminViewUser() {
@@ -54,80 +73,64 @@ function AdminViewUser() {
 
   const isAdmin = currentUser?.role === 'system_admin'
   const canToggle = isAdmin && currentUser?.id !== user?.id
+  const isSuspended = user?.status === 'suspended'
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-xl space-y-8">
-        <h1 className="text-3xl font-semibold text-slate-100">View User Account</h1>
+    <PageShell width="max-w-xl">
+      <PageHeader
+        eyebrow="Admin"
+        title="View User Account"
+        actions={
+          <Button variant="secondary" onClick={() => navigate('/manage-users')}>
+            Back
+          </Button>
+        }
+      />
 
-        {error && (
-          <p className="rounded-xl bg-red-900/40 px-4 py-3 text-sm text-red-300">{error}</p>
-        )}
+      {error && <ErrorState message={error} />}
 
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
-          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Account Details</h2>
-
-          {loading ? (
-            <p className="text-center text-sm text-slate-400">Loading...</p>
-          ) : (
-            <div className="space-y-5 text-sm text-slate-300">
-              <p>
-                <span className="font-semibold text-slate-100">Username: </span>
-                {user?.username || '—'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-100">Email: </span>
-                {user?.email || '—'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-100">Full Name: </span>
-                {user?.full_name || '—'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-100">External ID: </span>
-                {user?.external_id || '—'}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-100">Account Type: </span>
-                <span className="capitalize">{user?.role?.replace('_', ' ') || '—'}</span>
-              </p>
-              <div className="flex items-center gap-3">
-                <p>
-                  <span className="font-semibold text-slate-100">Status: </span>
-                  <span className={`font-medium ${STATUS_BADGE[user?.status] ?? 'text-slate-300'}`}>
-                    {STATUS_LABEL[user?.status] ?? user?.status ?? '—'}
-                  </span>
-                </p>
-                {canToggle && (
-                  <button
-                    onClick={handleToggleSuspend}
-                    disabled={toggling}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                      user.status === 'suspended'
-                        ? 'bg-green-600 hover:bg-green-700'
-                        : 'bg-red-600 hover:bg-red-700'
-                    }`}
-                  >
-                    {toggling
-                      ? 'Updating...'
-                      : user.status === 'suspended'
-                        ? 'Unsuspend Account'
-                        : 'Suspend Account'}
-                  </button>
-                )}
-              </div>
+      {loading ? (
+        <Card padded={false}>
+          <LoadingState message="Loading user..." />
+        </Card>
+      ) : (
+        user && (
+          <Card>
+            <div className="text-sm">
+              <MetaRow label="Username">{user.username || '—'}</MetaRow>
+              <MetaRow label="Email">{user.email || '—'}</MetaRow>
+              <MetaRow label="Full Name">{user.full_name || '—'}</MetaRow>
+              <MetaRow label="External ID">{user.external_id || '—'}</MetaRow>
+              <MetaRow label="Account Type">
+                <span className="capitalize">{user.role?.replace('_', ' ') || '—'}</span>
+              </MetaRow>
+              <MetaRow label="Status">
+                <StatusBadge tone={STATUS_TONE[user.status] ?? 'slate'}>
+                  {STATUS_LABEL[user.status] ?? user.status ?? '—'}
+                </StatusBadge>
+              </MetaRow>
             </div>
-          )}
-        </div>
 
-        <button
-          onClick={() => navigate('/manage-users')}
-          className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-        >
-          Back
-        </button>
-      </div>
-    </div>
+            {canToggle && (
+              <div className="mt-6 border-t border-slate-800 pt-6">
+                <Button
+                  fullWidth
+                  variant={isSuspended ? 'success' : 'danger'}
+                  onClick={handleToggleSuspend}
+                  disabled={toggling}
+                >
+                  {toggling
+                    ? 'Updating...'
+                    : isSuspended
+                      ? 'Unsuspend Account'
+                      : 'Suspend Account'}
+                </Button>
+              </div>
+            )}
+          </Card>
+        )
+      )}
+    </PageShell>
   )
 }
 
