@@ -1,6 +1,37 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../utils/api.js'
+import { Button, Card, PageHeader, PageShell } from '../components/ui.jsx'
+
+function ArrowIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// A dashboard tile — the whole card is the clickable action.
+function ActionCard({ title, description, onClick, highlight = false }) {
+  return (
+    <Card
+      as="button"
+      onClick={onClick}
+      className={`group flex h-full w-full flex-col text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+        highlight
+          ? 'border-blue-500/40 bg-blue-500/10 hover:border-blue-400'
+          : 'hover:border-blue-400/60'
+      }`}
+    >
+      <h2 className="text-base font-semibold text-slate-100 group-hover:text-blue-300">{title}</h2>
+      <p className="mt-2 flex-1 text-sm text-slate-400">{description}</p>
+      <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-400">
+        {highlight ? 'Start now' : 'Open'}
+        <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </Card>
+  )
+}
 
 function OrganizerDashboard() {
   const navigate = useNavigate()
@@ -18,40 +49,59 @@ function OrganizerDashboard() {
       .catch(() => navigate('/login'))
   }, [navigate])
 
+  const goToAccount = () => {
+    localStorage.setItem('backTo', '/organizer-dashboard')
+    navigate('/view-account', { state: { from: '/organizer-dashboard' } })
+  }
+
+  const goToHistory = () => {
+    localStorage.setItem('backTo', '/organizer-dashboard')
+    navigate('/election-history', { state: { from: '/organizer-dashboard' } })
+  }
+
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 rounded-3xl bg-slate-800 p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Organizer'}</h1>
-          </div>
-          <button
-            onClick={() => { logout(); navigate('/login') }}
-            className="inline-flex items-center justify-center rounded-2xl bg-slate-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-600"
+    <PageShell>
+      <PageHeader
+        eyebrow="Organizer"
+        title={`Welcome, ${user?.username || 'Organizer'}`}
+        subtitle="Create and manage your voting events, then review results once they close."
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => {
+              logout()
+              navigate('/login')
+            }}
           >
             Log Out
-          </button>
-        </header>
+          </Button>
+        }
+      />
 
-        <main className="mt-10 grid grid-cols-2 gap-6">
-          {[
-            { label: 'View User Account', action: () => { localStorage.setItem('backTo', '/organizer-dashboard'); navigate('/view-account', { state: { from: '/organizer-dashboard' } }) } },
-            { label: 'New Election', action: () => navigate('/create-election') },
-            { label: 'My Active Elections', action: () => navigate('/active-elections') },
-            { label: 'My Election History', action: () => { localStorage.setItem('backTo', '/organizer-dashboard'); navigate('/election-history', { state: { from: '/organizer-dashboard' } }) } },
-          ].map(({ label, action }) => (
-            <button
-              key={label}
-              onClick={action}
-              className="group rounded-3xl border border-slate-700 bg-slate-800 p-6 text-left shadow-sm transition hover:border-amber-500 hover:shadow-md"
-            >
-              <div className="text-sm font-semibold text-slate-100">{label}</div>
-              <p className="mt-3 text-sm text-slate-400">Click to view details</p>
-            </button>
-          ))}
-        </main>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <ActionCard
+          title="New Election"
+          description="Set up a new voting event — candidates, deadline, ballot type, and eligible voters."
+          onClick={() => navigate('/create-election')}
+          highlight
+        />
+        <ActionCard
+          title="My Active Elections"
+          description="View elections that are currently open and manage their details."
+          onClick={() => navigate('/active-elections')}
+        />
+        <ActionCard
+          title="My Election History"
+          description="Review completed elections and their published results."
+          onClick={goToHistory}
+        />
+        <ActionCard
+          title="View User Account"
+          description="See and update your organizer profile details."
+          onClick={goToAccount}
+        />
       </div>
-    </div>
+    </PageShell>
   )
 }
 
