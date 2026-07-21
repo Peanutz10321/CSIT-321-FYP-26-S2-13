@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getCurrentUser, getElectionDetails, getVoteHistory, submitVote } from '../utils/api'
+import { Button, Card, LoadingState, LockIcon, PageShell } from '../components/ui.jsx'
 
 function CastVote() {
   const navigate = useNavigate()
@@ -103,9 +104,11 @@ function CastVote() {
 
   if (loading || userLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-xl text-slate-300">Loading...</div>
-      </div>
+      <PageShell width="max-w-xl">
+        <Card padded={false}>
+          <LoadingState message="Loading ballot..." />
+        </Card>
+      </PageShell>
     )
   }
 
@@ -117,113 +120,125 @@ function CastVote() {
   const atLimit = isMulti && selectedIds.length >= maxSelections
   const hasChoice = abstain || selectedIds.length > 0
 
+  const optionClass = (checked, disabled) =>
+    `flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${
+      checked
+        ? 'border-blue-500 bg-blue-500/10'
+        : 'border-slate-800 bg-slate-950/40 hover:border-slate-600'
+    } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`
+
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-xl rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
-        <h1 className="mb-8 text-2xl font-semibold text-slate-100">Cast Your Vote</h1>
-
-        <div className="space-y-6">
-          <p className="text-sm text-slate-300">
-            <span className="font-semibold text-slate-100">External ID: </span>
-            {currentUser.external_id}
-          </p>
-
-          <fieldset>
-            <legend className="mb-3 text-sm font-semibold text-slate-100">
-              {isMulti
-                ? `Select up to ${maxSelections} candidate${maxSelections === 1 ? '' : 's'}, or abstain`
-                : 'Select one candidate, or abstain'}
-            </legend>
-
-            {isMulti && (
-              <p aria-live="polite" className="mb-3 text-xs text-slate-300">
-                {selectedIds.length} of {maxSelections} selections
-              </p>
-            )}
-
-            <div className="space-y-3">
-              {election.candidates.map((candidate) => {
-                const checked = !abstain && selectedIds.includes(candidate.id)
-                return (
-                  <label
-                    key={candidate.id}
-                    className="flex cursor-pointer items-center justify-between border-b border-slate-600 py-2"
-                  >
-                    <span className="text-sm text-slate-100">{candidate.name}</span>
-                    {isMulti ? (
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleMulti(candidate.id, maxSelections)}
-                        disabled={!isVoter || (!checked && atLimit)}
-                        className="h-5 w-5 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    ) : (
-                      <input
-                        type="radio"
-                        name="ballot-choice"
-                        checked={checked}
-                        onChange={() => chooseSingle(candidate.id)}
-                        disabled={!isVoter}
-                        className="h-5 w-5 cursor-pointer border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    )}
-                  </label>
-                )
-              })}
-
-              <label className="flex cursor-pointer items-center justify-between border-b border-slate-600 py-2">
-                <span className="text-sm italic text-slate-300">Abstain (no candidate receives your vote)</span>
-                {isMulti ? (
-                  <input
-                    type="checkbox"
-                    checked={abstain}
-                    onChange={(e) => (e.target.checked ? chooseAbstain() : setAbstain(false))}
-                    disabled={!isVoter}
-                    className="h-5 w-5 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                ) : (
-                  <input
-                    type="radio"
-                    name="ballot-choice"
-                    checked={abstain}
-                    onChange={chooseAbstain}
-                    disabled={!isVoter}
-                    className="h-5 w-5 cursor-pointer border-slate-500 accent-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                )}
-              </label>
-            </div>
-          </fieldset>
-
-          {!isVoter && (
-            <p className="text-xs text-slate-400">Voting is restricted to voters.</p>
-          )}
-
-          {isVoter && (
-            <div className="flex justify-center gap-4 pt-2">
-              <button
-                type="button"
-                onClick={handleVote}
-                disabled={submitting || !hasChoice || !!existingVoteId}
-                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-base font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {existingVoteId ? 'Voted' : submitting ? 'Submitting...' : 'Submit Vote'}
-              </button>
-              {existingVoteId && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
-                  className="border-2 border-blue-500 bg-slate-900/70 px-8 py-3 text-base font-medium text-blue-300 transition hover:border-blue-400 hover:text-blue-200"
-                >
-                  View Vote Details
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+    <PageShell width="max-w-xl">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-100">Cast Your Vote</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          {election.title} · voting as <span className="text-slate-300">{currentUser.external_id}</span>
+        </p>
       </div>
-    </div>
+
+      <Card>
+        <fieldset>
+          <legend className="text-sm font-semibold text-slate-100">
+            {isMulti
+              ? `Select up to ${maxSelections} candidate${maxSelections === 1 ? '' : 's'}, or abstain`
+              : 'Select one candidate, or abstain'}
+          </legend>
+
+          {isMulti && (
+            <p
+              aria-live="polite"
+              className="mt-2 inline-flex rounded-full bg-slate-800/70 px-2.5 py-0.5 text-xs font-medium text-slate-200"
+            >
+              {selectedIds.length} of {maxSelections} selections
+            </p>
+          )}
+
+          <div className="mt-4 space-y-2.5">
+            {election.candidates.map((candidate) => {
+              const checked = !abstain && selectedIds.includes(candidate.id)
+              const disabled = !isVoter || (isMulti && !checked && atLimit)
+              return (
+                <label key={candidate.id} className={optionClass(checked, disabled)}>
+                  {isMulti ? (
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleMulti(candidate.id, maxSelections)}
+                      disabled={disabled}
+                      className="h-5 w-5 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed"
+                    />
+                  ) : (
+                    <input
+                      type="radio"
+                      name="ballot-choice"
+                      checked={checked}
+                      onChange={() => chooseSingle(candidate.id)}
+                      disabled={disabled}
+                      className="h-5 w-5 cursor-pointer border-slate-500 accent-blue-500 disabled:cursor-not-allowed"
+                    />
+                  )}
+                  <span className="text-sm font-medium text-slate-100">{candidate.name}</span>
+                </label>
+              )
+            })}
+
+            <label className={`${optionClass(abstain, !isVoter)} mt-2 border-dashed`}>
+              {isMulti ? (
+                <input
+                  type="checkbox"
+                  checked={abstain}
+                  onChange={(e) => (e.target.checked ? chooseAbstain() : setAbstain(false))}
+                  disabled={!isVoter}
+                  className="h-5 w-5 cursor-pointer rounded border-slate-500 accent-blue-500 disabled:cursor-not-allowed"
+                />
+              ) : (
+                <input
+                  type="radio"
+                  name="ballot-choice"
+                  checked={abstain}
+                  onChange={chooseAbstain}
+                  disabled={!isVoter}
+                  className="h-5 w-5 cursor-pointer border-slate-500 accent-blue-500 disabled:cursor-not-allowed"
+                />
+              )}
+              <span className="text-sm italic text-slate-300">
+                Abstain (no candidate receives your vote)
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <p className="mt-5 flex items-start gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-3 text-xs text-slate-400">
+          <LockIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+          Your ballot is encrypted when you submit. You will be asked to confirm before it is cast.
+        </p>
+
+        {!isVoter && (
+          <p className="mt-4 text-xs text-slate-400">Voting is restricted to voters.</p>
+        )}
+
+        {isVoter && (
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Button
+              size="lg"
+              onClick={handleVote}
+              disabled={submitting || !hasChoice || !!existingVoteId}
+            >
+              {existingVoteId ? 'Voted' : submitting ? 'Submitting...' : 'Submit Vote'}
+            </Button>
+            {existingVoteId && (
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
+              >
+                View Vote Details
+              </Button>
+            )}
+          </div>
+        )}
+      </Card>
+    </PageShell>
   )
 }
 

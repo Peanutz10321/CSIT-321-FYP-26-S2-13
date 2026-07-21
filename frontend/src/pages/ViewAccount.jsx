@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getCurrentUser } from '../utils/api.js'
+import { Button, Card, LoadingState, PageHeader, PageShell } from '../components/ui.jsx'
+
+function AccountRow({ label, children }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-slate-800/70 py-3 last:border-0 sm:flex-row sm:justify-between sm:gap-4">
+      <span className="text-sm font-medium text-slate-400">{label}</span>
+      <span className="text-sm text-slate-100 sm:text-right">{children}</span>
+    </div>
+  )
+}
 
 function ViewAccount() {
   const navigate = useNavigate()
@@ -23,53 +33,35 @@ function ViewAccount() {
   const roleLabel = user?.role === 'organizer' ? 'Organizer' : 'Voter'
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-xl space-y-8">
-        <h1 className="text-3xl font-semibold text-slate-100">View {roleLabel} Account</h1>
-
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
-          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Account Details</h2>
-
-          <div className="space-y-5 text-sm text-slate-300">
-            <p>
-              <span className="font-semibold text-slate-100">Username: </span>
-              {user?.username || 'Loading...'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">{roleLabel} Email: </span>
-              {user?.email || 'Loading...'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Password: </span>
-              ••••••••
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Full Name: </span>
-              {user?.full_name || 'Loading...'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">External ID: </span>
-              {user?.external_id || 'Loading...'}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-4">
-          <button
-            onClick={() => navigate('/update-account')}
-            className="rounded-2xl bg-blue-600 px-6 py-4 text-base font-semibold text-white transition hover:bg-blue-700"
-          >
-            Update User Account
-          </button>
-          <button
-            onClick={() => navigate(returnPath)}
-            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-          >
+    <PageShell width="max-w-xl">
+      <PageHeader
+        eyebrow="Account"
+        title={`View ${roleLabel} Account`}
+        actions={
+          <Button variant="secondary" onClick={() => navigate(returnPath)}>
             Back
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        }
+      />
+
+      <Card padded={!!user}>
+        {!user ? (
+          <LoadingState message="Loading account..." />
+        ) : (
+          <div className="text-sm">
+            <AccountRow label="Username">{user.username || '—'}</AccountRow>
+            <AccountRow label={`${roleLabel} Email`}>{user.email || '—'}</AccountRow>
+            <AccountRow label="Password">••••••••</AccountRow>
+            <AccountRow label="Full Name">{user.full_name || '—'}</AccountRow>
+            <AccountRow label="External ID">{user.external_id || '—'}</AccountRow>
+          </div>
+        )}
+      </Card>
+
+      <Button fullWidth size="lg" onClick={() => navigate('/update-account')}>
+        Update User Account
+      </Button>
+    </PageShell>
   )
 }
 

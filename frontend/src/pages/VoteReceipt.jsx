@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getVoteDetails, getElectionDetails, getCurrentUser } from '../utils/api'
+import { Button, Card, LoadingState, PageShell } from '../components/ui.jsx'
+
+function ReceiptField({ label, children }) {
+  return (
+    <p className="flex flex-col gap-0.5 border-b border-slate-800/70 py-3 last:border-0 sm:flex-row sm:justify-between sm:gap-4">
+      <span className="text-sm font-medium text-slate-400">{label}</span>
+      <span className="text-sm text-slate-100 sm:text-right">{children}</span>
+    </p>
+  )
+}
 
 function VoteReceipt() {
   const navigate = useNavigate()
@@ -40,23 +50,24 @@ function VoteReceipt() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <p className="text-slate-300">Loading...</p>
-      </div>
+      <PageShell width="max-w-xl">
+        <Card padded={false}>
+          <LoadingState message="Loading receipt..." />
+        </Card>
+      </PageShell>
     )
   }
 
   if (error || !vote || !election) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4">
-        <p className="text-red-400">{error ?? 'Receipt not found.'}</p>
-        <button
-          onClick={() => navigate('/vote-history')}
-          className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
-        >
+      <PageShell width="max-w-xl">
+        <Card className="border-rose-500/30 bg-rose-500/10 text-center text-sm text-rose-300">
+          {error ?? 'Receipt not found.'}
+        </Card>
+        <Button variant="secondary" onClick={() => navigate('/vote-history')}>
           Back to History
-        </button>
-      </div>
+        </Button>
+      </PageShell>
     )
   }
 
@@ -76,66 +87,64 @@ function VoteReceipt() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-xl space-y-8">
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
-          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Vote Details</h2>
+    <PageShell width="max-w-xl">
+      <div className="text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+          Vote recorded
+        </span>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-100">Vote Details</h1>
+        <p className="mt-1 text-sm text-slate-400">Keep this receipt for your reference.</p>
+      </div>
 
-          <div className="space-y-5 text-sm text-slate-300">
-            <p>
-              <span className="font-semibold text-slate-100">External ID: </span>
-              {currentUser?.external_id ?? '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Election Title: </span>
-              {election.title}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Election Candidates: </span>
-              {candidateNames}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Receipt Code: </span>
-              {vote.receipt_code ?? '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Election Commence Date And Time: </span>
-              {election.start_date ? new Date(election.start_date).toLocaleString() : '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Election End Date And Time: </span>
-              {election.end_date ? new Date(election.end_date).toLocaleString() : '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Date And Time Vote Casted: </span>
-              {vote.submitted_at ? new Date(vote.submitted_at).toLocaleString() : '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Election Organizer: </span>
-              {election.organizer_username ?? '—'}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-100">Your Selection: </span>
-              {isImmediate ? (
-                selectionDisplay
-              ) : (
-                <span className="text-slate-400">
-                  Your selection is not retained in plaintext and is only shown
-                  immediately after submission.
-                </span>
-              )}
-            </p>
-          </div>
+      <Card>
+        {/* Receipt code — the official confirmation the voter keeps. */}
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-center">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Receipt Code</p>
+          <p className="mt-1 font-mono text-lg font-semibold tracking-wider text-blue-300">
+            {vote.receipt_code ?? '—'}
+          </p>
         </div>
 
-        <button
-          onClick={() => navigate('/vote-history')}
-          className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-        >
-          Back to History
-        </button>
-      </div>
-    </div>
+        {/* Your selection — shown in full only immediately after submission. */}
+        <p className="mt-5 flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+          <span className="text-sm font-semibold text-slate-100">Your Selection:</span>
+          {isImmediate ? (
+            <span className="text-sm text-slate-100">{selectionDisplay}</span>
+          ) : (
+            <span className="text-sm text-slate-400">
+              Your selection is not retained in plaintext and is only shown immediately after
+              submission.
+            </span>
+          )}
+        </p>
+
+        <div className="mt-5 text-sm">
+          <ReceiptField label="External ID">{currentUser?.external_id ?? '—'}</ReceiptField>
+          <ReceiptField label="Election Title">{election.title}</ReceiptField>
+          <ReceiptField label="Election Candidates">{candidateNames}</ReceiptField>
+          <ReceiptField label="Election Commence">
+            {election.start_date ? new Date(election.start_date).toLocaleString() : '—'}
+          </ReceiptField>
+          <ReceiptField label="Election End">
+            {election.end_date ? new Date(election.end_date).toLocaleString() : '—'}
+          </ReceiptField>
+          <ReceiptField label="Vote Cast At">
+            {vote.submitted_at ? new Date(vote.submitted_at).toLocaleString() : '—'}
+          </ReceiptField>
+          <ReceiptField label="Election Organizer">{election.organizer_username ?? '—'}</ReceiptField>
+        </div>
+
+        <p className="mt-5 rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-3 text-xs leading-relaxed text-slate-400">
+          Ballots are stored as encrypted values and counted in aggregate. Individual ballots are
+          not normally decrypted during tallying.
+        </p>
+      </Card>
+
+      <Button variant="secondary" onClick={() => navigate('/vote-history')}>
+        Back to History
+      </Button>
+    </PageShell>
   )
 }
 
