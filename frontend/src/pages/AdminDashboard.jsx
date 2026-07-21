@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, logout } from '../utils/api.js'
+import { Button, Card, PageHeader, PageShell, StatusBadge } from '../components/ui.jsx'
+
+function ArrowIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function AdminDashboard() {
   const navigate = useNavigate()
@@ -19,32 +28,57 @@ function AdminDashboard() {
   }, [navigate])
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col gap-4 rounded-3xl bg-slate-800 p-8 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-rose-400">Admin Dashboard</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-100">Welcome, {user?.username || 'Admin'}</h1>
-          </div>
-          <button
-            onClick={() => { logout(); navigate('/login') }}
-            className="inline-flex items-center justify-center rounded-2xl bg-slate-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-600"
+    <PageShell>
+      <PageHeader
+        eyebrow="Admin"
+        title={`Welcome, ${user?.username || 'Admin'}`}
+        subtitle="Manage user accounts across the system."
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => {
+              logout()
+              navigate('/login')
+            }}
           >
             Log Out
-          </button>
-        </header>
+          </Button>
+        }
+      />
 
-        <main className="mt-10 flex justify-center">
-          <button
-            onClick={() => navigate('/manage-users')}
-            className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-800 p-8 text-center shadow-sm transition hover:border-rose-500 hover:shadow-md"
-          >
-            <div className="text-lg font-semibold text-slate-100">Manage User Accounts</div>
-            <p className="mt-3 text-sm text-slate-400">View and edit user accounts</p>
-          </button>
-        </main>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        {/* Primary admin action */}
+        <Card
+          as="button"
+          onClick={() => navigate('/manage-users')}
+          className="group flex h-full w-full flex-col border-blue-500/40 bg-blue-500/10 text-left transition hover:border-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        >
+          <h2 className="text-base font-semibold text-slate-100 group-hover:text-blue-300">
+            Manage User Accounts
+          </h2>
+          <p className="mt-2 flex-1 text-sm text-slate-400">
+            View users, review their details, and suspend or reinstate accounts.
+          </p>
+          <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-400">
+            Open
+            <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </Card>
+
+        {/* System overview — who you are signed in as */}
+        <Card className="flex h-full flex-col">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Signed in as</p>
+          <p className="mt-2 text-lg font-semibold text-slate-100">{user?.username || '—'}</p>
+          <div className="mt-3">
+            <StatusBadge tone="rose">System Administrator</StatusBadge>
+          </div>
+          <p className="mt-4 flex-1 text-sm text-slate-400">
+            Administrator access is limited to managing user accounts. Elections and ballots are
+            handled by organizers and voters.
+          </p>
+        </Card>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

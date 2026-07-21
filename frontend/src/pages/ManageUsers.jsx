@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listUsers } from '../utils/api.js'
+import {
+  Button,
+  Card,
+  Input,
+  PageHeader,
+  PageShell,
+  ResponsiveListTable,
+  StatusBadge,
+} from '../components/ui.jsx'
 
 const STATUS_LABEL = {
   active: 'Active',
@@ -8,10 +17,10 @@ const STATUS_LABEL = {
   suspended: 'Suspended',
 }
 
-const STATUS_BADGE = {
-  active: 'text-green-400',
-  inactive: 'text-yellow-400',
-  suspended: 'text-red-400',
+const STATUS_TONE = {
+  active: 'emerald',
+  inactive: 'amber',
+  suspended: 'rose',
 }
 
 function ManageUsers() {
@@ -49,92 +58,71 @@ function ManageUsers() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <h1 className="text-3xl font-semibold text-slate-100">User Accounts</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Search by username, email, or school ID.
-          </p>
-
-          <form onSubmit={handleSearch} className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by username, email, or school ID..."
-              className="w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-            />
-            <button
-              type="submit"
-              className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-            >
-              Search
-            </button>
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="rounded-2xl bg-slate-700 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-600"
-              >
-                Clear
-              </button>
-            )}
-          </form>
-
-          {searchQuery && (
-            <p className="mt-4 text-sm text-slate-400">
-              Showing results for: <span className="font-semibold text-slate-200">{searchQuery}</span>
-            </p>
-          )}
-
-          {error && (
-            <p className="mt-4 rounded-xl bg-red-900/40 px-4 py-3 text-sm text-red-300">{error}</p>
-          )}
-        </div>
-
-        <div className="overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-sm">
-          <div className="grid grid-cols-3 gap-4 border-b border-slate-700 bg-slate-700 px-6 py-4 text-sm font-semibold text-slate-300">
-            <span>Username</span>
-            <span>Status</span>
-            <span className="text-right">View</span>
-          </div>
-          <div className="divide-y divide-slate-700">
-            {loading ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400">Loading users...</div>
-            ) : users.length === 0 ? (
-              <div className="px-6 py-8 text-center text-sm text-slate-400">No users found.</div>
-            ) : (
-              users.map((user) => (
-                <div key={user.id} className="grid grid-cols-3 gap-4 px-6 py-5 text-sm text-slate-300 items-center">
-                  <span>{user.username}</span>
-                  <span className={`font-medium ${STATUS_BADGE[user.status] ?? 'text-slate-300'}`}>
-                    {STATUS_LABEL[user.status] ?? user.status}
-                  </span>
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => navigate(`/admin/users/${user.id}`)}
-                      className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
-                    >
-                      View
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl bg-slate-800 p-8 shadow-sm">
-          <button
-            onClick={() => navigate('/admin-dashboard')}
-            className="rounded-2xl bg-slate-700 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-600"
-          >
+    <PageShell>
+      <PageHeader
+        eyebrow="Admin"
+        title="User Accounts"
+        subtitle="Search by username, email, or school ID."
+        actions={
+          <Button variant="secondary" onClick={() => navigate('/admin-dashboard')}>
             Back to Dashboard
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        }
+      />
+
+      <Card>
+        <form onSubmit={handleSearch} className="flex flex-col gap-3 sm:flex-row">
+          <label htmlFor="user-search" className="sr-only">
+            Search users
+          </label>
+          <Input
+            id="user-search"
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by username, email, or school ID..."
+          />
+          <Button type="submit" className="sm:w-auto">
+            Search
+          </Button>
+          {searchQuery && (
+            <Button type="button" variant="secondary" onClick={handleClearSearch} className="sm:w-auto">
+              Clear
+            </Button>
+          )}
+        </form>
+
+        {searchQuery && (
+          <p className="mt-4 text-sm text-slate-400">
+            Showing results for: <span className="font-semibold text-slate-200">{searchQuery}</span>
+          </p>
+        )}
+      </Card>
+
+      <ResponsiveListTable
+        primary={{ header: 'Username', cell: (u) => u.username }}
+        secondary={{
+          header: 'Status',
+          cell: (u) => (
+            <StatusBadge tone={STATUS_TONE[u.status] ?? 'slate'}>
+              {STATUS_LABEL[u.status] ?? u.status}
+            </StatusBadge>
+          ),
+        }}
+        action={(u) => (
+          <Button size="sm" onClick={() => navigate(`/admin/users/${u.id}`)}>
+            View
+          </Button>
+        )}
+        items={users}
+        getKey={(u) => u.id}
+        loading={loading}
+        error={error || null}
+        loadingMessage="Loading users..."
+        emptyTitle="No users found."
+        emptyMessage="Try a different search term."
+      />
+    </PageShell>
   )
 }
 
