@@ -1,6 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getElectionDetails, getEligibleVoters, getVoteHistory } from '../utils/api.js'
+import {
+  Button,
+  Card,
+  ErrorState,
+  LoadingState,
+  PageHeader,
+  PageShell,
+  StatusBadge,
+} from '../components/ui.jsx'
+
+// Module-level so React does not recreate it on each render.
+function MetaRow({ label, children }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-b border-slate-800/70 py-3 last:border-0 sm:flex-row sm:justify-between sm:gap-4">
+      <span className="text-sm font-medium text-slate-400">{label}</span>
+      <span className="text-sm text-slate-100 sm:text-right">{children}</span>
+    </div>
+  )
+}
 
 function ElectionDetail() {
   const navigate = useNavigate()
@@ -40,123 +59,114 @@ function ElectionDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-xl text-slate-300">Loading election details...</div>
-      </div>
+      <PageShell width="max-w-2xl">
+        <Card padded={false}>
+          <LoadingState message="Loading election details..." />
+        </Card>
+      </PageShell>
     )
   }
 
   if (error || !election) {
     return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-xl space-y-4">
-          <p className="text-center text-rose-400">{error ?? 'Election not found.'}</p>
-          <button
-            onClick={() => navigate(backPath)}
-            className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
-          >
-            Go Back
-          </button>
-        </div>
-      </div>
+      <PageShell width="max-w-2xl">
+        <ErrorState message={error ?? 'Election not found.'} />
+        <Button variant="secondary" onClick={() => navigate(backPath)}>
+          Go Back
+        </Button>
+      </PageShell>
     )
   }
 
   const isOrganizerActive = role === 'organizer' && from === 'active'
+  const isMulti = election.ballot_type === 'multi'
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-xl space-y-8">
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-8 py-10 shadow-lg">
-          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Election Details</h2>
+    <PageShell width="max-w-2xl">
+      <PageHeader
+        eyebrow="Elections"
+        title="Election Details"
+        subtitle={election.title}
+        actions={
+          <Button variant="secondary" onClick={() => navigate(backPath)}>
+            Back
+          </Button>
+        }
+      />
 
-          <div className="space-y-6 text-sm text-slate-300">
-            <p>
-              <span className="font-semibold text-slate-100">Title: </span>
-              {election.title}
-            </p>
-
-            <div>
-              <p className="font-semibold text-slate-100">Candidates:</p>
-              {election.candidates?.length > 0 ? (
-                <ul className="mt-2 space-y-1 pl-4">
-                  {election.candidates.map((c) => (
-                    <li key={c.id} className="list-disc">{c.name}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-1 text-slate-400">No candidates listed.</p>
-              )}
-            </div>
-
-            <p>
-              <span className="font-semibold text-slate-100">Ballot Type: </span>
-              {election.ballot_type === 'multi'
-                ? `Multiple choice — up to ${election.max_selections ?? 1} selections`
-                : 'Single choice'}
-            </p>
-
-            <p>
-              <span className="font-semibold text-slate-100">Deadline: </span>
-              {election.end_date ? new Date(election.end_date).toLocaleDateString() : '—'}
-            </p>
-
-            {isOrganizerActive ? (
-              <p>
-                <span className="font-semibold text-slate-100">Eligible Voters: </span>
-                {eligibleCount !== null ? eligibleCount : '—'}
-              </p>
-            ) : (
-              <p>
-                <span className="font-semibold text-slate-100">Election Organizer: </span>
-                {election.organizer_username ?? '—'}
-              </p>
-            )}
-          </div>
-
-          {isOrganizerActive && (
-            <div className="mt-10 flex justify-center">
-              <button
-                onClick={() => navigate(`/update-election/${election.id}`)}
-                className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
-              >
-                Update Election
-              </button>
-            </div>
-          )}
-
-          {role === 'voter' && from === 'active' && (
-            <div className="mt-10 flex items-center justify-center gap-4">
-              {existingVoteId ? (
-                <>
-                  <p className="text-sm font-semibold text-emerald-400">Voted</p>
-                  <button
-                    onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
-                    className="border-2 border-blue-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-blue-300 transition hover:border-blue-400 hover:text-blue-200"
-                  >
-                    View Vote Details
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
-                  className="border-2 border-slate-500 bg-slate-900/70 px-8 py-3 text-lg font-medium text-slate-100 transition hover:border-blue-400 hover:text-blue-300"
-                >
-                  Cast Vote
-                </button>
-              )}
-            </div>
+      <Card>
+        <div>
+          <p className="text-sm font-medium text-slate-400">Candidates</p>
+          {election.candidates?.length > 0 ? (
+            <ul className="mt-2 space-y-1 pl-4 text-sm text-slate-100">
+              {election.candidates.map((c) => (
+                <li key={c.id} className="list-disc">{c.name}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">No candidates listed.</p>
           )}
         </div>
 
-        <button
-          onClick={() => navigate(backPath)}
-          className="rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-        >
-          Back
-        </button>
-      </div>
-    </div>
+        <div className="mt-5 text-sm">
+          {/* Ballot type is rendered in exactly one place to keep it scannable. */}
+          <MetaRow label="Ballot Type">
+            <StatusBadge tone={isMulti ? 'blue' : 'slate'}>
+              {isMulti ? 'Multiple choice' : 'Single choice'}
+            </StatusBadge>
+            {isMulti && (
+              <span className="ml-2 text-xs text-slate-400">
+                up to {election.max_selections ?? 1} selections
+              </span>
+            )}
+          </MetaRow>
+
+          <MetaRow label="Deadline">
+            {election.end_date ? new Date(election.end_date).toLocaleDateString() : '—'}
+          </MetaRow>
+
+          {isOrganizerActive ? (
+            <MetaRow label="Eligible Voters">{eligibleCount !== null ? eligibleCount : '—'}</MetaRow>
+          ) : (
+            <MetaRow label="Election Organizer">{election.organizer_username ?? '—'}</MetaRow>
+          )}
+        </div>
+
+        {isOrganizerActive && (
+          <div className="mt-6 border-t border-slate-800 pt-6">
+            <Button fullWidth size="lg" onClick={() => navigate(`/update-election/${election.id}`)}>
+              Update Election
+            </Button>
+          </div>
+        )}
+
+        {role === 'voter' && from === 'active' && (
+          <div className="mt-6 border-t border-slate-800 pt-6">
+            {existingVoteId ? (
+              <div className="flex flex-col items-center gap-3">
+                <StatusBadge tone="emerald">Voted</StatusBadge>
+                <Button
+                  fullWidth
+                  size="lg"
+                  variant="secondary"
+                  onClick={() => navigate(`/vote-receipt/${existingVoteId}`)}
+                >
+                  View Vote Details
+                </Button>
+              </div>
+            ) : (
+              <Button
+                fullWidth
+                size="lg"
+                onClick={() => navigate('/cast-vote', { state: { electionId: election.id } })}
+              >
+                Cast Vote
+              </Button>
+            )}
+          </div>
+        )}
+      </Card>
+    </PageShell>
   )
 }
 

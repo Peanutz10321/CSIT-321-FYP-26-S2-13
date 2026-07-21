@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getElectionDetails, updateElection, extendElectionDeadline } from '../utils/api'
+import { Button, Card, Input, LoadingState, PageHeader, PageShell, StatusBadge } from '../components/ui.jsx'
 
 function UpdateElection() {
   const navigate = useNavigate()
@@ -76,138 +77,151 @@ function UpdateElection() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 px-4 py-10">
-        <div className="mx-auto max-w-xl text-slate-300">Loading...</div>
-      </div>
+      <PageShell width="max-w-xl">
+        <Card padded={false}>
+          <LoadingState message="Loading election..." />
+        </Card>
+      </PageShell>
     )
   }
 
-  const inputClass =
-    'w-full rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800'
-  const labelClass = 'font-semibold text-slate-100 sm:w-32 sm:shrink-0'
+  const isActive = election?.status === 'active'
+  const fieldLabel = 'mb-2 block text-sm font-medium text-slate-200'
+  const radioOption = (active) =>
+    `flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition ${
+      active
+        ? 'border-blue-400 bg-blue-500/10 text-blue-200'
+        : 'border-slate-700 bg-slate-950/40 text-slate-200 hover:border-slate-600'
+    }`
 
   return (
-    <div className="min-h-screen bg-slate-900 px-4 py-10">
-      <div className="mx-auto max-w-xl space-y-6">
+    <PageShell width="max-w-xl">
+      <PageHeader
+        eyebrow="Elections"
+        title="Update Election Details"
+        subtitle={
+          isActive
+            ? 'This election is live — you can extend its deadline. Ballot settings are locked.'
+            : 'This election is still a draft, so every detail can still be changed.'
+        }
+        actions={
+          <StatusBadge tone={isActive ? 'emerald' : 'amber'}>
+            {isActive ? 'Active' : 'Draft'}
+          </StatusBadge>
+        }
+      />
 
-        <div className="rounded-sm border-2 border-slate-500 bg-slate-800/80 px-4 py-6 shadow-lg sm:px-8 sm:py-10">
-          <h2 className="mb-8 text-center text-xl font-semibold text-slate-100">Update Election Details</h2>
+      <Card>
+        <div className="space-y-6">
+          <div>
+            <label htmlFor="election-title" className={fieldLabel}>
+              Title
+            </label>
+            <Input
+              id="election-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Election title"
+            />
+          </div>
 
-          <div className="space-y-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <span className={labelClass}>Title:</span>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Election title"
-                className={inputClass}
-              />
-            </div>
+          <div>
+            <label htmlFor="election-deadline" className={fieldLabel}>
+              Deadline
+            </label>
+            <Input
+              id="election-deadline"
+              type="datetime-local"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-              <span className={labelClass}>Deadline:</span>
-              <input
-                type="datetime-local"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
+          {election?.status === 'draft' ? (
+            <fieldset>
+              <legend className={fieldLabel}>Ballot Type</legend>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className={radioOption(ballotType === 'single')}>
+                  <input
+                    type="radio"
+                    name="ballot-type"
+                    value="single"
+                    checked={ballotType === 'single'}
+                    onChange={() => {
+                      setBallotType('single')
+                      setBallotError(null)
+                    }}
+                    className="h-4 w-4 cursor-pointer accent-blue-500"
+                  />
+                  Single choice
+                </label>
+                <label className={radioOption(ballotType === 'multi')}>
+                  <input
+                    type="radio"
+                    name="ballot-type"
+                    value="multi"
+                    checked={ballotType === 'multi'}
+                    onChange={() => {
+                      setBallotType('multi')
+                      setBallotError(null)
+                    }}
+                    className="h-4 w-4 cursor-pointer accent-blue-500"
+                  />
+                  Multiple choice
+                </label>
+              </div>
 
-            {election?.status === 'draft' ? (
-              <fieldset className="space-y-3">
-                <legend className="font-semibold text-slate-100">Ballot Type:</legend>
-                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:gap-8">
-                  <label className="flex cursor-pointer items-center gap-3 py-1 text-slate-100">
-                    <input
-                      type="radio"
-                      name="ballot-type"
-                      value="single"
-                      checked={ballotType === 'single'}
-                      onChange={() => {
-                        setBallotType('single')
-                        setBallotError(null)
-                      }}
-                      className="h-5 w-5 cursor-pointer accent-blue-500"
-                    />
-                    Single choice
+              {ballotType === 'multi' && (
+                <div className="mt-4 max-w-[12rem]">
+                  <label htmlFor="max-selections" className={fieldLabel}>
+                    Maximum selections
                   </label>
-                  <label className="flex cursor-pointer items-center gap-3 py-1 text-slate-100">
-                    <input
-                      type="radio"
-                      name="ballot-type"
-                      value="multi"
-                      checked={ballotType === 'multi'}
-                      onChange={() => {
-                        setBallotType('multi')
-                        setBallotError(null)
-                      }}
-                      className="h-5 w-5 cursor-pointer accent-blue-500"
-                    />
-                    Multiple choice
-                  </label>
+                  <Input
+                    id="max-selections"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={maxSelections}
+                    onChange={(e) => {
+                      setMaxSelections(e.target.value)
+                      setBallotError(null)
+                    }}
+                  />
                 </div>
-                {ballotType === 'multi' && (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                    <label htmlFor="max-selections" className="text-sm text-slate-300">
-                      Maximum selections
-                    </label>
-                    <input
-                      id="max-selections"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={maxSelections}
-                      onChange={(e) => {
-                        setMaxSelections(e.target.value)
-                        setBallotError(null)
-                      }}
-                      className="w-28 rounded-2xl border border-slate-600 bg-slate-700 px-4 py-3 text-slate-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-800"
-                    />
-                  </div>
-                )}
-                {ballotError && (
-                  <p role="alert" className="text-sm text-rose-400">
-                    {ballotError}
-                  </p>
-                )}
-              </fieldset>
-            ) : (
-              <p className="text-sm text-slate-300">
-                <span className="font-semibold text-slate-100">Ballot Type: </span>
+              )}
+
+              {ballotError && (
+                <p role="alert" className="mt-3 text-sm text-rose-400">
+                  {ballotError}
+                </p>
+              )}
+            </fieldset>
+          ) : (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+              <p className={fieldLabel}>Ballot Type</p>
+              <p className="text-sm text-slate-100">
                 {ballotType === 'multi'
                   ? `Multiple choice — up to ${maxSelections} selections`
                   : 'Single choice'}
-                <span className="mt-1 block text-xs text-slate-400">
-                  The ballot configuration is locked once the election is active.
-                </span>
               </p>
-            )}
-          </div>
-
-          <div className="mt-10 sm:flex sm:justify-center">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
+              <p className="mt-1 text-xs text-slate-400">
+                The ballot configuration is locked once the election is active.
+              </p>
+            </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-6 py-4 text-base font-semibold text-slate-100 transition hover:bg-slate-700"
-        >
-          Back
-        </button>
-
-      </div>
-    </div>
+        <div className="mt-8 flex flex-col gap-3 border-t border-slate-800 pt-6 sm:flex-row sm:justify-end sm:gap-4">
+          <Button variant="secondary" onClick={() => navigate(-1)} className="sm:w-auto">
+            Back
+          </Button>
+          <Button onClick={handleSave} disabled={saving} className="sm:w-auto">
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </Card>
+    </PageShell>
   )
 }
 
