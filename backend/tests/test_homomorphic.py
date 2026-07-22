@@ -19,6 +19,7 @@ from phe import paillier
 from phe.paillier import EncryptedNumber
 
 from app.database import SessionLocal
+from tests.factories import provision_from_payload
 from app.main import app
 from app.models.election import Election
 from app.security.homomorphic import (
@@ -282,6 +283,11 @@ def _register(role: str) -> dict:
         "email": f"{role}_{suffix}@test.com",
         "password": "testing123",
     }
+    # Public registration creates voters only; organizers are provisioned by an
+    # admin, so tests that merely need one insert it directly.
+    if role != "voter":
+        return {**payload, **provision_from_payload(payload)}
+
     r = client.post(f"{AUTH_BASE}/register", json=payload)
     assert r.status_code in [200, 201], r.text
     return {**payload, **r.json()}
