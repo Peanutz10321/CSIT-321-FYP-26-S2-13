@@ -32,22 +32,25 @@ function fillCredentials() {
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw123456' } })
 }
 
-describe('Register role dropdown', () => {
+describe('Register role selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('offers Voter and Organizer, not Student/Teacher', () => {
+  it('offers no role picker at all', () => {
     renderRegister()
-    expect(screen.getByRole('option', { name: 'Voter' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Organizer' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Student' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'Teacher' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Profile')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('defaults the selected role to voter', () => {
+  it('does not offer an Organizer option', () => {
     renderRegister()
-    expect(screen.getByLabelText('Profile')).toHaveValue('voter')
+    expect(screen.queryByRole('option', { name: 'Organizer' })).not.toBeInTheDocument()
+  })
+
+  it('tells the user organizer accounts are provisioned by an admin', () => {
+    renderRegister()
+    expect(screen.getByText(/provisioned by a system administrator/i)).toBeInTheDocument()
   })
 })
 
@@ -71,17 +74,17 @@ describe('Register submit flow', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/voter-dashboard'))
   })
 
-  it('registers an organizer and redirects to the organizer dashboard', async () => {
-    decodeJwt.mockReturnValue({ role: 'organizer' })
+  it('always submits the voter role, never organizer', async () => {
+    decodeJwt.mockReturnValue({ role: 'voter' })
 
     renderRegister()
     fillCredentials()
-    fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'organizer' } })
     fireEvent.click(screen.getByRole('button', { name: 'Register' }))
 
-    await waitFor(() =>
-      expect(registerUser).toHaveBeenCalledWith(expect.objectContaining({ role: 'organizer' })),
-    )
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/organizer-dashboard'))
+    await waitFor(() => expect(registerUser).toHaveBeenCalled())
+
+    const payload = registerUser.mock.calls[0][0]
+    expect(payload.role).toBe('voter')
+    expect(payload.role).not.toBe('organizer')
   })
 })

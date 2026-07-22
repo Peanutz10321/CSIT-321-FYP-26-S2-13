@@ -1,5 +1,3 @@
-import random
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,20 +7,9 @@ from app.models.user import User, UserRole, UserStatus
 from app.schemas.auth_schema import RegisterRequest, LoginRequest, AuthResponse
 from app.schemas.user_schema import UserResponse
 from email_validator import validate_email, EmailNotValidError
-from app.security.password import hash_password, verify_password
+from app.security.password import verify_password
 from app.security.jwt import create_access_token
-
-_FIRST_NAMES = [
-    "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Jamie", "Quinn",
-    "Avery", "Peyton", "Reese", "Skyler", "Drew", "Blake", "Cameron", "Dana",
-]
-_LAST_NAMES = [
-    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
-    "Wilson", "Anderson", "Thomas", "Jackson", "White", "Harris", "Martin", "Lee",
-]
-
-def _generate_full_name() -> str:
-    return f"{random.choice(_FIRST_NAMES)} {random.choice(_LAST_NAMES)}"
+from app.services.user_service import build_user_account
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -30,9 +17,11 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     """
-    Public registration.
-    Only voter and organizer accounts can be registered publicly.
-    System admin accounts must NOT be publicly registered.
+    Public registration. Creates voter accounts only.
+
+    Organizer and system admin are trusted roles and must never be
+    self-assigned: organizers create elections and trigger tallies. Organizers
+    are provisioned by a system admin via POST /admin/users/organizers.
     """
 
     if not request.username or not request.username.strip() \
@@ -58,11 +47,21 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="System admin accounts cannot be registered publicly",
         )
 
-    # Only allow voter or organizer
-    if request.role not in [UserRole.voter.value, UserRole.organizer.value]:
+    # Organizer is a trusted role and cannot be self-assigned.
+    if request.role == UserRole.organizer.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Organizer accounts cannot be registered publicly. "
+                "Contact a system administrator."
+            ),
+        )
+
+    # Public registration creates voters only.
+    if request.role != UserRole.voter.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either voter or organizer",
+            detail="Role must be voter",
         )
 
     # Check duplicate email
@@ -80,32 +79,12 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Username already exists.",
         )
 
-    # Generate external_id: VOTER-001 for voters, ORG-001 for organizers
-    role_enum = UserRole(request.role)
-    prefix = "VOTER" if role_enum == UserRole.voter else "ORG"
-    existing_external_ids = (
-        db.query(User.external_id)
-        .filter(User.role == role_enum)
-        .all()
-    )
-    max_num = 0
-    for (existing_external_id,) in existing_external_ids:
-        try:
-            num = int(existing_external_id.split("-")[1])
-            if num > max_num:
-                max_num = num
-        except (IndexError, ValueError):
-            pass
-    external_id = f"{prefix}-{max_num + 1:03d}"
-
-    new_user = User(
-        external_id=external_id,
+    new_user = build_user_account(
+        db,
+        role=UserRole.voter,
         username=request.username,
-        full_name=_generate_full_name(),
         email=request.email,
-        password_hash=hash_password(request.password),
-        role=role_enum,
-        status=UserStatus.active,
+        password=request.password,
     )
 
     db.add(new_user)

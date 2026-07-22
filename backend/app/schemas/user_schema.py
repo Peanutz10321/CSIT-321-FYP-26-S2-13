@@ -28,3 +28,16 @@ class UserUpdateRequest(BaseModel):
 
 class UserStatusUpdateRequest(BaseModel):
     status: str
+
+
+class OrganizerCreateRequest(BaseModel):
+    """Admin-supplied details for a provisioned organizer account.
+
+    The role is not accepted from the client: this endpoint only ever creates
+    organizers.
+    """
+
+    username: Annotated[str, Field(min_length=1)]
+    email: EmailStr
+    password: Annotated[str, Field(min_length=8)]
+    full_name: str | None = None

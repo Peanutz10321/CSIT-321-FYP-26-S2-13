@@ -73,9 +73,12 @@ def evaluate_expression(expression, user):
 
 
 class FakeQuery:
-    def __init__(self, users):
+    def __init__(self, users, column=None):
         self.users = users
         self.filters = []
+        # Set when the caller queried a single column (e.g. query(User.external_id)),
+        # which SQLAlchemy returns as row tuples rather than entities.
+        self.column = column
 
     def filter(self, *expressions):
         self.filters.extend(expressions)
@@ -92,12 +95,15 @@ class FakeQuery:
 
         return results
 
+    def _as_row(self, user):
+        return (getattr(user, self.column),) if self.column else user
+
     def first(self):
         results = self._filtered_users()
-        return results[0] if results else None
+        return self._as_row(results[0]) if results else None
 
     def all(self):
-        return self._filtered_users()
+        return [self._as_row(user) for user in self._filtered_users()]
 
     def count(self):
         return len(self._filtered_users())
@@ -107,8 +113,10 @@ class FakeSession:
     def __init__(self):
         self.users = []
 
-    def query(self, model):
-        return FakeQuery(self.users)
+    def query(self, *entities):
+        # query(User) yields entities; query(User.external_id) yields row tuples.
+        column = getattr(entities[0], "key", None) if entities else None
+        return FakeQuery(self.users, column=column)
 
     def add(self, user):
         if not user.id:
@@ -209,7 +217,7 @@ def test_register_system_admin_is_rejected(client):
     assert response.json()["detail"] == "System admin accounts cannot be registered publicly"
 
 
-def test_register_accepts_voter_and_organizer_roles(client):
+def test_register_accepts_voter_role(client):
     voter = client.post(
         "/auth/register",
         json={
@@ -222,7 +230,10 @@ def test_register_accepts_voter_and_organizer_roles(client):
     assert voter.status_code == 201, voter.text
     assert voter.json()["role"] == "voter"
 
-    organizer = client.post(
+
+def test_public_organizer_registration_is_rejected(client, fake_db):
+    """Organizer is a trusted role and must not be self-assignable."""
+    response = client.post(
         "/auth/register",
         json={
             "username": "organizer_rt",
@@ -231,8 +242,25 @@ def test_register_accepts_voter_and_organizer_roles(client):
             "role": "organizer",
         },
     )
-    assert organizer.status_code == 201, organizer.text
-    assert organizer.json()["role"] == "organizer"
+
+    assert response.status_code == 403
+    assert "organizer" in response.json()["detail"].lower()
+    # Nothing was created.
+    assert fake_db.users == []
+
+
+def test_register_defaults_to_voter_when_role_is_omitted(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "no_role",
+            "email": "no_role@test.com",
+            "password": "password123",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["role"] == "voter"
 
 
 def test_register_rejects_legacy_student_role(client):
@@ -264,18 +292,6 @@ def test_generated_external_id_uses_role_prefix(client):
     )
     assert voter.status_code == 201, voter.text
     assert voter.json()["external_id"].startswith("VOTER-")
-
-    organizer = client.post(
-        "/auth/register",
-        json={
-            "username": "prefix_organizer",
-            "email": "prefix_organizer@test.com",
-            "password": "password123",
-            "role": "organizer",
-        },
-    )
-    assert organizer.status_code == 201, organizer.text
-    assert organizer.json()["external_id"].startswith("ORG-")
 
 
 def test_login_success(client):
@@ -452,3 +468,161 @@ def test_admin_cannot_suspend_self(client, fake_db):
     response = client.patch(f"/admin/users/{admin.id}/suspend", headers=auth_headers(token))
 
     assert response.status_code == 400
+
+# ---------------------------------------------------------------------------
+# Admin-only organizer provisioning
+#
+# Organizer is a trusted role (election creation, tally triggering), so it is
+# rejected on the public registration route and can only be created here.
+# ---------------------------------------------------------------------------
+
+ORGANIZER_PAYLOAD = {
+    "username": "new_organizer",
+    "email": "new_organizer@test.com",
+    "password": "password123",
+    "full_name": "New Organizer",
+}
+
+
+def _create_organizer(client, token, **overrides):
+    return client.post(
+        "/admin/users/organizers",
+        json={**ORGANIZER_PAYLOAD, **overrides},
+        headers=auth_headers(token),
+    )
+
+
+def test_admin_can_create_an_organizer(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    response = _create_organizer(client, token)
+
+    assert response.status_code == 201, response.text
+
+    data = response.json()
+    assert data["role"] == "organizer"
+    assert data["status"] == "active"
+    assert data["email"] == "new_organizer@test.com"
+    assert data["full_name"] == "New Organizer"
+    assert data["external_id"].startswith("ORG-")
+    assert "password" not in data
+    assert "password_hash" not in data
+
+
+def test_admin_created_organizer_can_log_in(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+    _create_organizer(client, token)
+
+    response = login(client, email="new_organizer@test.com", password="password123")
+
+    assert response.status_code == 200, response.text
+
+
+def test_organizer_external_ids_are_sequential(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    first = _create_organizer(client, token)
+    second = _create_organizer(
+        client,
+        token,
+        username="second_organizer",
+        email="second_organizer@test.com",
+    )
+
+    assert first.json()["external_id"] == "ORG-001"
+    assert second.json()["external_id"] == "ORG-002"
+
+
+def test_creating_organizer_generates_full_name_when_omitted(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    response = _create_organizer(client, token, full_name=None)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["full_name"]
+
+
+def test_creating_organizer_rejects_duplicate_email(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+    _create_organizer(client, token)
+
+    response = _create_organizer(client, token, username="different_username")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Account already exists."
+
+
+def test_creating_organizer_rejects_duplicate_username(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+    _create_organizer(client, token)
+
+    response = _create_organizer(client, token, email="different@test.com")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Username already exists."
+
+
+def test_creating_organizer_rejects_short_password(client, fake_db):
+    _, token = _admin_token(client, fake_db)
+
+    response = _create_organizer(client, token, password="short")
+
+    assert response.status_code == 422
+
+
+def test_voter_cannot_create_an_organizer(client, fake_db):
+    voter = make_user(
+        role=UserRole.voter,
+        external_id="VOTER-001",
+        username="plain_voter",
+        email="plain_voter@test.com",
+        password="password123",
+    )
+    fake_db.users.append(voter)
+    token = login(client, email="plain_voter@test.com", password="password123").json()[
+        "access_token"
+    ]
+
+    response = _create_organizer(client, token)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "System admin access required"
+    assert all(user.role != UserRole.organizer for user in fake_db.users)
+
+
+def test_organizer_cannot_create_another_organizer(client, fake_db):
+    """No privilege escalation: organizers cannot mint more organizers."""
+    organizer = make_user(
+        role=UserRole.organizer,
+        external_id="ORG-001",
+        username="existing_organizer",
+        email="existing_organizer@test.com",
+        password="password123",
+    )
+    fake_db.users.append(organizer)
+    token = login(
+        client, email="existing_organizer@test.com", password="password123"
+    ).json()["access_token"]
+
+    response = _create_organizer(client, token)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "System admin access required"
+    assert len([u for u in fake_db.users if u.role == UserRole.organizer]) == 1
+
+
+def test_creating_organizer_requires_authentication(client, fake_db):
+    response = client.post("/admin/users/organizers", json=ORGANIZER_PAYLOAD)
+
+    # 401: no bearer credentials supplied at all.
+    assert response.status_code == 401
+    assert fake_db.users == []
+
+
+def test_suspended_admin_cannot_create_an_organizer(client, fake_db):
+    admin, token = _admin_token(client, fake_db)
+    admin.status = UserStatus.suspended
+
+    response = _create_organizer(client, token)
+
+    assert response.status_code == 403

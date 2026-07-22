@@ -92,6 +92,14 @@ async function listUsers(search = {}) {
   return request(`/admin/users${query ? `?${query}` : ''}`)
 }
 
+// Organizer accounts cannot be self-registered; a system admin provisions them.
+async function createOrganizer(data) {
+  return request('/admin/users/organizers', {
+    method: 'POST',
+    data,
+  })
+}
+
 async function getActiveElections(search = {}) {
   const params = new URLSearchParams()
   if (search.search?.trim()) params.set('search', search.search.trim())
@@ -232,6 +240,7 @@ export {
   getCurrentUser,
   updateCurrentUser,
   listUsers,
+  createOrganizer,
   viewUser,
   getActiveElections,
   getElectionHistory,

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database import SessionLocal
+from tests.factories import provision_from_payload
 from app.models.election import Election, ElectionStatus
 from app.models.election_voter import ElectionVoter
 from app.models.audit_log import AuditLog
@@ -37,6 +38,11 @@ def register_user(role: str, status: str = "active") -> dict:
         "email": f"{role}_{suffix}@test.com",
         "password": "testing123",
     }
+
+    # Public registration creates voters only; organizers are provisioned by an
+    # admin, so tests that merely need one insert it directly.
+    if role != "voter":
+        return {**payload, **provision_from_payload(payload, status)}
 
     response = client.post(f"{AUTH_BASE}/register", json=payload)
     assert response.status_code in [200, 201], response.text
