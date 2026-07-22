@@ -20,7 +20,6 @@ const primaryButtonClass =
 
 function Register() {
   const navigate = useNavigate()
-  const [role, setRole] = useState('voter')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -33,11 +32,13 @@ function Register() {
     setError('')
 
     try {
+      // Public registration creates voter accounts only. Organizer accounts are
+      // provisioned by a system admin.
       const payload = {
         username: username.trim(),
         email: email.trim(),
         password,
-        role,
+        role: 'voter',
       }
 
       await registerUser(payload)
@@ -84,7 +85,7 @@ function Register() {
             Create your account
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Register as a voter or an election organizer.
+            Register as a voter to take part in elections.
           </p>
         </div>
 
@@ -144,23 +145,10 @@ function Register() {
               />
             </div>
 
-            <div>
-              <label htmlFor="role" className={labelClass}>
-                Profile
-              </label>
-              <select
-                id="role"
-                value={role}
-                onChange={(event) => setRole(event.target.value)}
-                className={inputClass}
-              >
-                <option value="voter">Voter</option>
-                <option value="organizer">Organizer</option>
-              </select>
-              <p className="mt-1.5 text-xs text-slate-500">
-                Choose how you&apos;ll use the system. Organizers can create and manage elections.
-              </p>
-            </div>
+            <p className="text-xs text-slate-500">
+              Registration creates a voter account. Organizer accounts are provisioned by a
+              system administrator.
+            </p>
 
             <button type="submit" disabled={submitting} className={`${primaryButtonClass} mt-2`}>
               {submitting ? 'Registering...' : 'Register'}
