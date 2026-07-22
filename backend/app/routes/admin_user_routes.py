@@ -3,15 +3,77 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
-from app.schemas.user_schema import UserResponse, UserStatusUpdateRequest
+from app.schemas.user_schema import (
+    OrganizerCreateRequest,
+    UserResponse,
+    UserStatusUpdateRequest,
+)
 from app.security.security import require_system_admin
+from app.services.user_service import build_user_account
 
 
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
+
+
+@router.post(
+    "/organizers",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def createOrganizer(
+    body: OrganizerCreateRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_system_admin),
+):
+    """
+    Provision an organizer account. System admin only.
+
+    Organizer is a trusted role (election creation, tally triggering), so it is
+    rejected on the public registration route and can only be created here.
+    """
+
+    existing_email = db.query(User).filter(User.email == body.email).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account already exists.",
+        )
+
+    existing_username = db.query(User).filter(User.username == body.username).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists.",
+        )
+
+    organizer = build_user_account(
+        db,
+        role=UserRole.organizer,
+        username=body.username,
+        email=body.email,
+        password=body.password,
+        full_name=body.full_name,
+    )
+
+    db.add(organizer)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account could not be created. Please try again.",
+        )
+
+    db.refresh(organizer)
+
+    return organizer
 
 
 @router.get("", response_model=list[UserResponse])
