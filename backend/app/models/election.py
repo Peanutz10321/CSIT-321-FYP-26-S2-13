@@ -40,9 +40,7 @@ class Election(Base):
     end_date = Column(DateTime, nullable=True)
 
     # Ballot configuration. Defaults keep every existing caller a single-choice
-    # ballot with exactly one selection. A server_default is set as well so a future
-    # migration backfills existing rows without a NULL window (no migration in this
-    # PR — see the PR notes about the coordinated schema update before shared DB use).
+    # ballot with exactly one selection.
     ballot_type = Column(
         Enum(BallotType, name="ballot_type"),
         nullable=False,

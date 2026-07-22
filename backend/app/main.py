@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from fastapi import Depends
 
-from app.database import Base, engine, get_db
+from app.database import get_db
 
 import app.models.user
 import app.models.election
@@ -28,7 +28,11 @@ from app.routes.result_routes import router as result_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    # Schema changes are applied by Alembic ('alembic upgrade head'), not at
+    # startup. create_all() used to run here, but it only ever creates missing
+    # tables — it silently skips new columns on tables that already exist, which
+    # is how elections.ballot_type drifted from the deployed schema.
+    # See MIGRATIONS.md.
     yield
 
 
