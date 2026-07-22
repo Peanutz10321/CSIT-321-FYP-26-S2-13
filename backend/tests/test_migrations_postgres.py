@@ -12,6 +12,7 @@ Start a throwaway database with:
         --name evoting-test-pg postgres:16
 
     export TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/evoting_test
+    export ALLOW_DESTRUCTIVE_DB_TESTS=true
 
 NEVER point TEST_POSTGRES_URL at the deployed database: the fixture below drops
 and recreates the public schema before every test.
@@ -29,6 +30,7 @@ from alembic.migration import MigrationContext
 
 from app.database import Base
 import app.models  # noqa: F401  (registers all tables on Base.metadata)
+from scripts.destructive_test_guard import require_safe_postgres_test_database
 
 
 TEST_POSTGRES_URL = os.getenv("TEST_POSTGRES_URL")
@@ -51,6 +53,10 @@ def _alembic_config() -> Config:
 @pytest.fixture
 def pg_engine():
     """A completely empty PostgreSQL database, rebuilt for every test."""
+    require_safe_postgres_test_database(
+        TEST_POSTGRES_URL,
+        destructive_tests_allowed=os.getenv("ALLOW_DESTRUCTIVE_DB_TESTS"),
+    )
     engine = sa.create_engine(TEST_POSTGRES_URL)
 
     with engine.begin() as connection:

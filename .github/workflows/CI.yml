@@ -63,6 +63,8 @@ jobs:
           # Throwaway database for the migration/constraint tests, which cannot
           # run on SQLite. Without this they skip.
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/evoting_test
+          # Required by the fail-closed guard before tests drop the public schema.
+          ALLOW_DESTRUCTIVE_DB_TESTS: "true"
         run: pytest tests -v
 
   frontend:

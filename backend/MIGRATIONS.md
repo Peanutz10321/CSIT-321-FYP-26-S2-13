@@ -104,8 +104,10 @@ docker run --rm -d -p 55432:5432 \
   --name evoting-test-pg postgres:16
 
 export TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/evoting_test
+export ALLOW_DESTRUCTIVE_DB_TESTS=true
 pytest tests/test_migrations_postgres.py -v
 ```
 
-**Never** point `TEST_POSTGRES_URL` at the deployed database. The test fixture
-drops and recreates the `public` schema before every test.
+The tests fail closed unless the URL uses PostgreSQL, targets localhost, names
+the database exactly `evoting_test`, and `ALLOW_DESTRUCTIVE_DB_TESTS=true` is
+set. The fixture drops and recreates the `public` schema before every test.
