@@ -18,6 +18,22 @@ jobs:
   backend:
     runs-on: ubuntu-latest
 
+    # Migration and constraint behaviour cannot be verified on SQLite, so the
+    # backend job gets a throwaway PostgreSQL instance.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evoting_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
         working-directory: backend
@@ -44,6 +60,9 @@ jobs:
           # Throwaway Fernet key for tests only — real one lives in .env
           KEYSTORE_MASTER_SECRET: odLNbv3Y2g1epq7Q-qRgM2riovLBiRnrp7KAEGjKujs=
           TESTING: "true"
+          # Throwaway database for the migration/constraint tests, which cannot
+          # run on SQLite. Without this they skip.
+          TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/evoting_test
         run: pytest tests -v
 
   frontend:
