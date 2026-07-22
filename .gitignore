@@ -38,3 +38,6 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+# Local planning notes, not part of the project source
+reminders/
+problems/
