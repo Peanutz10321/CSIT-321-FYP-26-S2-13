@@ -13,6 +13,37 @@ def _is_truthy(value: str | None) -> bool:
     return str(value).lower() in {"1", "true", "yes", "y"}
 
 
+def _require_safe_test_target(database_url: str) -> None:
+    """Refuse to run the suite against a database it may not delete from.
+
+    The clean_test_records fixture below issues DELETE statements against
+    DATABASE_URL after every test. They are scoped to %@test.com accounts, so the
+    blast radius is bounded, but pointing DATABASE_URL at a shared or deployed
+    database would still remove real rows. SQLite is always allowed because the
+    test database is a throwaway local file; anything else has to be named
+    explicitly.
+    """
+    from sqlalchemy.engine import make_url
+
+    url = make_url(database_url)
+
+    if url.get_backend_name() == "sqlite":
+        return
+
+    allowed = {
+        name.strip().lower()
+        for name in os.getenv("ALLOWED_TEST_DATABASES", "").split(",")
+        if name.strip()
+    }
+
+    if (url.database or "").lower() not in allowed:
+        raise RuntimeError(
+            "Refusing to run the test suite against a non-SQLite DATABASE_URL "
+            "that is not listed in ALLOWED_TEST_DATABASES. The per-test cleanup "
+            "deletes rows, so the target must be named explicitly."
+        )
+
+
 def pytest_configure(config):
     if os.getenv("APP_ENV") != "test" or not _is_truthy(os.getenv("TESTING")):
         raise RuntimeError(
@@ -23,6 +54,8 @@ def pytest_configure(config):
     database_url = os.getenv("DATABASE_URL", "")
     if not database_url:
         raise RuntimeError("DATABASE_URL is missing from .env.test")
+
+    _require_safe_test_target(database_url)
 
     import app.models.user
     import app.models.election
