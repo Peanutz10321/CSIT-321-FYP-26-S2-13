@@ -25,6 +25,7 @@ alembic -x db_url="$SOME_DATABASE_URL" upgrade head
 |---|---|
 | `0001_baseline` | The schema as `create_all()` had already built it on the deployed database, before the multi-select ballot work. |
 | `0002_ballot_config` | Adds `elections.ballot_type` and `elections.max_selections`, plus the `ballot_type` enum type. |
+| `0003_ballot_commitment` | Renames `ballots.vote_hash` to `ballots.ballot_commitment`. Data is preserved, but values written before this revision are old salted hashes and will not verify. |
 
 The split exists so that both a fresh database and the already-deployed database
 can reach the same final schema.
@@ -136,6 +137,35 @@ expected result, so the printed summary always reflects the database.
 Reset, population, tally, and result verification run in one PostgreSQL
 transaction. If any step fails, the transaction is rolled back and the data
 that existed before `--reset` is preserved.
+
+## Ballot commitments
+
+Every ballot stores an HMAC-SHA256 commitment (`ballots.ballot_commitment`) over
+its canonical input: ballot id, election id, receipt code, the **complete
+ciphertext**, a digest of the ballot configuration and candidate set, and the
+submission time. The same value is returned in the voter's receipt.
+
+The key comes from `RECEIPT_SIGNING_SECRET`, which is **required** and must contain
+at least 32 UTF-8 bytes. It must differ from both `JWT_SECRET` and
+`KEYSTORE_MASTER_SECRET`; the application refuses to start when these invariants
+are not met. Generate an independent random value, for example with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"`, and store it only
+in the deployment environment. Rotating it invalidates every existing commitment.
+
+Verify a ballot with `GET /votes/{vote_id}/verify` (the voter who cast it).
+
+**What this detects:** modification of any committed field made through database
+access alone, and accidental corruption.
+
+**What this does not do:** it is not end-to-end verifiability. The backend holds
+the signing secret, so a compromised backend — or anyone who obtains that secret —
+can mint a commitment for a substituted ballot. A voter cannot independently
+confirm their vote was counted as cast.
+
+Ballots created before revision `0003` carry the old salted hash and will report
+`verified: false`. That is intentional: recomputing their commitments would attest
+to whatever the database happens to hold. Reseed or re-cast to obtain verifiable
+ballots.
 
 ## Running the PostgreSQL tests
 

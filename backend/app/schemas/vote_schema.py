@@ -20,7 +20,9 @@ class VoteResponse(BaseModel):
     election_id: UUID
     election_voter_id: UUID
     encrypted_vote: str
-    vote_hash: str
+    # HMAC commitment over this ballot's canonical input, including its complete
+    # ciphertext. Returned in the immediate receipt and stored with the ballot.
+    ballot_commitment: str
     receipt_code: str
     submitted_at: datetime
     bulletin_status: str
@@ -44,3 +46,19 @@ class VoteHistoryResponse(BaseModel):
     receipt_code: str
     submitted_at: datetime
     bulletin_status: str
+
+
+class VoteVerificationResponse(BaseModel):
+    """Result of recomputing a stored ballot's commitment.
+
+    `verified` false means a committed field changed after the ballot was cast,
+    or the ballot predates the commitment scheme. It does NOT prove the vote was
+    counted as cast: the backend holds the signing secret, so this detects
+    tampering only by a party that lacks that key.
+    """
+
+    ballot_id: UUID
+    election_id: UUID
+    receipt_code: str
+    verified: bool
+    detail: str

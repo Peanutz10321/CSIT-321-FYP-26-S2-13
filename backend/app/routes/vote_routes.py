@@ -1,5 +1,3 @@
-import hashlib
-import secrets
 import uuid
 from datetime import datetime, date
 
@@ -14,8 +12,19 @@ from app.models.election import Election, ElectionStatus, BallotType
 from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
-from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryResponse
+from app.schemas.vote_schema import (
+    VoteCreate,
+    VoteResponse,
+    VoteHistoryResponse,
+    VoteVerificationResponse,
+)
 from app.security.audit import log_event
+from app.security.ballot_commitment import (
+    ballot_configuration_digest,
+    commitment_matches,
+    compute_ballot_commitment,
+    compute_commitment_for_ballot,
+)
 from app.security.security import require_voter
 from app.security.homomorphic import deserialize_public_key, encrypt_ballot
 from app.services.election_lock import lock_election_for_vote
@@ -164,21 +173,33 @@ def submitVote(
     # an abstention. No plaintext choice is stored anywhere on the ballot.
     encrypted_vote = encrypt_ballot(public_key, candidate_ids, selected_ids_str)
 
-    # The hash is an integrity/receipt token. It must never include the
-    # candidate choice: the input space is tiny, so a DB reader could
-    # brute-force sha256(election:voter:candidate:time) and unmask the vote.
-    salt = secrets.token_hex(16)
-    vote_hash = hashlib.sha256(
-        f"{salt}:{payload.election_id}:{election_voter.id}".encode()
-    ).hexdigest()
-
     receipt_code = f"RCPT-{uuid.uuid4().hex[:12].upper()}"
 
+    # The id is generated here rather than at flush time because it is part of the
+    # committed input. The commitment covers the complete ciphertext, so altering a
+    # stored ballot invalidates it — the previous salted hash covered neither the
+    # ciphertext nor anything reproducible, so it could not be verified at all.
+    # No plaintext choice enters the commitment.
+    ballot_id = uuid.uuid4()
+    ballot_commitment = compute_ballot_commitment(
+        ballot_id=ballot_id,
+        election_id=payload.election_id,
+        receipt_code=receipt_code,
+        encrypted_vote=encrypted_vote,
+        ballot_config_digest=ballot_configuration_digest(
+            election.ballot_type.value,
+            election.max_selections,
+            candidate_ids,
+        ),
+        submitted_at=now,
+    )
+
     ballot = Ballot(
+        id=ballot_id,
         election_id=payload.election_id,
         election_voter_id=election_voter.id,
         encrypted_vote=encrypted_vote,
-        vote_hash=vote_hash,
+        ballot_commitment=ballot_commitment,
         receipt_code=receipt_code,
         submitted_at=now,
         bulletin_status=BulletinStatus.published,
@@ -221,7 +242,7 @@ def submitVote(
         election_id=ballot.election_id,
         election_voter_id=ballot.election_voter_id,
         encrypted_vote=ballot.encrypted_vote,
-        vote_hash=ballot.vote_hash,
+        ballot_commitment=ballot.ballot_commitment,
         receipt_code=ballot.receipt_code,
         submitted_at=ballot.submitted_at,
         bulletin_status=ballot.bulletin_status.value,
@@ -274,6 +295,63 @@ def getVoteHistory(
     ]
 
 
+@router.get("/{vote_id}/verify", response_model=VoteVerificationResponse)
+def verifyVote(
+    vote_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_voter: User = Depends(require_voter),
+):
+    """
+    Recompute a stored ballot's commitment and compare it with the stored value.
+
+    Detects modification of the ciphertext, receipt code, submission time, ballot
+    id, election, or ballot configuration made through database access alone.
+
+    It does NOT prove the ballot was counted as cast. The backend holds the
+    signing secret, so a compromised backend can produce a matching commitment
+    for a substituted ballot. See app/security/ballot_commitment.py.
+    """
+    ballot = (
+        db.query(Ballot)
+        .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)
+        .filter(
+            Ballot.id == vote_id,
+            ElectionVoter.voter_id == current_voter.id,
+        )
+        .first()
+    )
+
+    if not ballot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vote not found",
+        )
+
+    election = db.get(Election, ballot.election_id)
+    candidate_ids = [
+        str(candidate_id)
+        for (candidate_id,) in db.query(Candidate.id)
+        .filter(Candidate.election_id == ballot.election_id)
+        .all()
+    ]
+
+    expected = compute_commitment_for_ballot(ballot, election, candidate_ids)
+    verified = commitment_matches(expected, ballot.ballot_commitment)
+
+    return VoteVerificationResponse(
+        ballot_id=ballot.id,
+        election_id=ballot.election_id,
+        receipt_code=ballot.receipt_code,
+        verified=verified,
+        detail=(
+            "Ballot matches its commitment."
+            if verified
+            else "Ballot does not match its commitment. It was modified after "
+                 "submission, or it predates the commitment scheme."
+        ),
+    )
+
+
 @router.get("/{vote_id}", response_model=VoteResponse)
 def getVoteDetails(
     vote_id: uuid.UUID,
@@ -304,7 +382,7 @@ def getVoteDetails(
         election_id=ballot.election_id,
         election_voter_id=ballot.election_voter_id,
         encrypted_vote=ballot.encrypted_vote,
-        vote_hash=ballot.vote_hash,
+        ballot_commitment=ballot.ballot_commitment,
         receipt_code=ballot.receipt_code,
         submitted_at=ballot.submitted_at,
         bulletin_status=ballot.bulletin_status.value,

@@ -10,7 +10,6 @@ homomorphic tally output and are verified before the script reports success.
 """
 
 import argparse
-import hashlib
 import os
 import sys
 import uuid
@@ -43,6 +42,10 @@ from app.security.password import hash_password
 from app.security.homomorphic import (
     deserialize_public_key,
     encrypt_vote,
+)
+from app.security.ballot_commitment import (
+    ballot_configuration_digest,
+    compute_ballot_commitment,
 )
 from app.security.keystore import create_and_store_keypair
 
@@ -184,11 +187,6 @@ def add_encrypted_ballot(db, election, voter_record, candidates, selected_candid
 
     receipt_code = f"RCPT-{uuid.uuid4().hex[:12].upper()}"
 
-    # Better than your current route logic because this does NOT hash candidate_id directly.
-    vote_hash = hashlib.sha256(
-        f"{election.id}:{voter_record.id}:{receipt_code}:{encrypted_vote}".encode()
-    ).hexdigest()
-
     if not election.start_date or not election.end_date:
         raise RuntimeError("Seeded ballots require an election start and end date")
 
@@ -204,11 +202,26 @@ def add_encrypted_ballot(db, election, voter_record, candidates, selected_candid
 
     voter_record.voted_at = submitted_time
 
+    # Same commitment function the vote route uses, so seeded ballots verify
+    # exactly like production ones instead of carrying a seed-only hash.
+    ballot_id = uuid.uuid4()
     ballot = Ballot(
+        id=ballot_id,
         election_id=election.id,
         election_voter_id=voter_record.id,
         encrypted_vote=encrypted_vote,
-        vote_hash=vote_hash,
+        ballot_commitment=compute_ballot_commitment(
+            ballot_id=ballot_id,
+            election_id=election.id,
+            receipt_code=receipt_code,
+            encrypted_vote=encrypted_vote,
+            ballot_config_digest=ballot_configuration_digest(
+                election.ballot_type.value,
+                election.max_selections,
+                candidate_ids,
+            ),
+            submitted_at=submitted_time,
+        ),
         receipt_code=receipt_code,
         submitted_at=submitted_time,
         bulletin_status=BulletinStatus.published,

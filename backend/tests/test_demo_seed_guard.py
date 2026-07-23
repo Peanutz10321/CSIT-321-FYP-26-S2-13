@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.database import Base
+from app.models.election import BallotType
 import scripts.seed_demo as seed_demo
 from scripts.demo_seed_guard import (
     require_demo_password,
@@ -245,6 +246,9 @@ def test_seeded_ballot_timestamp_is_inside_election_window(monkeypatch):
         public_key_n="demo-key",
         start_date=start,
         end_date=end,
+        # Read by the shared ballot-commitment input.
+        ballot_type=BallotType.single,
+        max_selections=1,
     )
     voter_record = SimpleNamespace(id=uuid4(), voted_at=None)
     candidates = [SimpleNamespace(id=uuid4()) for _ in range(3)]

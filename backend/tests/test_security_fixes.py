@@ -2,7 +2,7 @@
 Tests for the Day-2/3 secrecy fixes (security-fixes branch).
 
 Pins three properties:
-1. vote_hash no longer encodes the candidate choice — a DB reader cannot
+1. the ballot commitment no longer encodes the candidate choice — a DB reader cannot
    brute-force the old sha256(election:voter:candidate:time) formula.
 2. Ciphertexts are freshly obfuscated — two encryptions of the same value
    are never byte-identical, so stored E(0)/E(1) can't be pattern-matched.
@@ -160,10 +160,10 @@ def cast_vote(voter_token: str, election: dict, candidate_index: int = 0) -> dic
 
 
 # ---------------------------------------------------------------------------
-# 1. vote_hash must not encode the recoverable choice
+# 1. the ballot commitment must not encode the recoverable choice
 # ---------------------------------------------------------------------------
 
-class TestVoteHashSecrecy:
+class TestBallotCommitmentSecrecy:
     def test_hash_not_brute_forceable_from_db_row(
         self, organizer_token, voter_user, voter_token
     ):
@@ -182,7 +182,7 @@ class TestVoteHashSecrecy:
                 old_formula = hashlib.sha256(
                     f"{election['id']}:{voter_id}:{candidate['id']}:{ballot.submitted_at.isoformat()}".encode()
                 ).hexdigest()
-                assert ballot.vote_hash != old_formula
+                assert ballot.ballot_commitment != old_formula
         finally:
             db.close()
 
@@ -193,7 +193,7 @@ class TestVoteHashSecrecy:
         vote = cast_vote(voter_token, election)
 
         for candidate in election["candidates"]:
-            assert candidate["id"] not in vote["vote_hash"]
+            assert candidate["id"] not in vote["ballot_commitment"]
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ class TestDoubleVoteConstraint:
                 election_id=UUID(election["id"]),
                 election_voter_id=election_voter.id,
                 encrypted_vote="{}",
-                vote_hash=uuid4().hex,
+                ballot_commitment=uuid4().hex,
                 receipt_code=f"RCPT-{uuid4().hex[:12].upper()}",
                 submitted_at=datetime.utcnow(),
                 bulletin_status=BulletinStatus.published,

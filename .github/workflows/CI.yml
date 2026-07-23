@@ -59,6 +59,9 @@ jobs:
           JWT_ALGORITHM: HS256
           # Throwaway Fernet key for tests only — real one lives in .env
           KEYSTORE_MASTER_SECRET: odLNbv3Y2g1epq7Q-qRgM2riovLBiRnrp7KAEGjKujs=
+          # Throwaway ballot-commitment key for tests only — the real one lives in
+          # the deployment environment and must never be committed.
+          RECEIPT_SIGNING_SECRET: ci-only-receipt-signing-secret-not-for-deployment
           TESTING: "true"
           # Throwaway database for the migration/constraint tests, which cannot
           # run on SQLite. Without this they skip.
