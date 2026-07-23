@@ -96,11 +96,14 @@ rather than constraint name, since several were auto-named by PostgreSQL.
 ## Seeding the demo database
 
 `scripts/seed_demo.py` is **destructive**: with `--reset` it truncates every
-application table. It refuses to run unless all four conditions hold.
+application table. It refuses to run unless every safety and credential
+condition below holds.
 
 The schema must already exist — run `alembic upgrade head` first. The seed no
 longer creates tables itself, because doing so would leave the database without
-an `alembic_version` row and break the next upgrade.
+an `alembic_version` row and break the next upgrade. The script compares the
+database's current Alembic revision with the migration repository's current
+head; merely having an `alembic_version` table is not sufficient.
 
 ```bash
 cd backend
@@ -129,6 +132,10 @@ The completed demo election is created **active**, given real encrypted ballots,
 and then closed through the same close/tally workflow the API uses. The script
 reads `candidate_results` back and aborts if the stored totals do not match the
 expected result, so the printed summary always reflects the database.
+
+Reset, population, tally, and result verification run in one PostgreSQL
+transaction. If any step fails, the transaction is rolled back and the data
+that existed before `--reset` is preserved.
 
 ## Running the PostgreSQL tests
 

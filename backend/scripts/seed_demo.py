@@ -16,6 +16,8 @@ import sys
 import uuid
 from datetime import timedelta
 
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, text
 
 from app.database import engine, SessionLocal
@@ -84,6 +86,22 @@ def require_schema_at_head(db) -> None:
             "before seeding (see MIGRATIONS.md)."
         )
 
+    migration_context = MigrationContext.configure(db.connection())
+    current_heads = set(migration_context.get_current_heads())
+    script_directory = ScriptDirectory(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic")
+    )
+    expected_heads = set(script_directory.get_heads())
+
+    if current_heads != expected_heads:
+        current = ", ".join(sorted(current_heads)) or "none"
+        expected = ", ".join(sorted(expected_heads)) or "none"
+        raise RuntimeError(
+            "Database is not at Alembic head "
+            f"(current: {current}; expected: {expected}). "
+            "Run 'alembic upgrade head' before seeding."
+        )
+
     missing = {"users", "elections", "ballots", "candidate_results"} - tables
     if missing:
         raise RuntimeError(
@@ -105,7 +123,6 @@ def reset_tables(db):
             users
         RESTART IDENTITY CASCADE;
     """))
-    db.commit()
 
 
 def create_user(db, role, external_id, username, full_name, email, password,
@@ -172,7 +189,18 @@ def add_encrypted_ballot(db, election, voter_record, candidates, selected_candid
         f"{election.id}:{voter_record.id}:{receipt_code}:{encrypted_vote}".encode()
     ).hexdigest()
 
-    submitted_time = now_sgt() - timedelta(days=3)
+    if not election.start_date or not election.end_date:
+        raise RuntimeError("Seeded ballots require an election start and end date")
+
+    if election.end_date <= election.start_date:
+        raise RuntimeError("Seeded ballots require a valid election date range")
+
+    # Deriving the historical vote time from the election prevents demo ballots
+    # from drifting before the start or after the deadline as dates change.
+    submitted_time = (
+        election.start_date
+        + (election.end_date - election.start_date) / 2
+    )
 
     voter_record.voted_at = submitted_time
 
@@ -394,20 +422,21 @@ def main(argv=None):
         add_encrypted_ballot(db, completed_election, completed_voters[2], completed_candidates, completed_candidates[1])
         add_encrypted_ballot(db, completed_election, completed_voters[3], completed_candidates, completed_candidates[2])
 
-        db.commit()
-
         # Close through the production workflow: runs the homomorphic tally once,
         # writes candidate_results, flips the status to completed, and records the
-        # election_closed and results_published audit events. Commits internally.
+        # election_closed and results_published audit events. The seed owns the
+        # transaction, so the helper flushes without committing.
         _tally_and_complete(
             db,
             completed_election,
             organizer.id,
             close_reason="demo_seed",
+            commit=False,
         )
 
         db.refresh(completed_election)
         stored_tally = verify_completed_tally(db, completed_election, completed_candidates)
+        db.commit()
 
         print("Demo database seeded successfully.")
         print("")

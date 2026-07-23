@@ -725,6 +725,8 @@ def _tally_and_complete(
     election: Election,
     actor_user_id: UUID,
     close_reason: str | None = None,
+    *,
+    commit: bool = True,
 ) -> None:
     """
     Core close/tally workflow — the single place the tally is ever run.
@@ -732,7 +734,11 @@ def _tally_and_complete(
     The caller must already hold the election row lock and have verified the
     election is active. Runs the homomorphic tally exactly once, upserts
     candidate_results, flips the status to completed, and records the
-    election_closed + results_published audit events — all in one atomic commit.
+    election_closed + results_published audit events.
+
+    HTTP request callers use the default and commit the completed tally here.
+    Transaction-owning callers such as the demo seed pass ``commit=False`` so
+    reset, population, tally, and verification can commit atomically.
 
     close_reason is recorded on the audit events so an automatic deadline close is
     distinguishable from an organizer-initiated one; it never carries ballot data.
@@ -820,7 +826,10 @@ def _tally_and_complete(
         details=details,
     )
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
 def _finalize_election_close(db: Session, election_id: UUID, current_organizer: User) -> Election:
