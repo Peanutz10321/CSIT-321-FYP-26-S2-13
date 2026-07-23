@@ -248,6 +248,50 @@ class TestVerification:
         assert result.ok
         assert result.checked == 0
 
+    def test_a_full_workflow_sequence_verifies(self, chain_db, actor):
+        """The PR 7 workflow events must chain exactly like the original ones.
+
+        Uses the real action names and detail shapes emitted by the admin and
+        election routes, so a change to either that broke the chain would show
+        up here rather than only in an end-to-end test.
+        """
+        workflow = [
+            ("organizer_created", "user", "role=organizer"),
+            ("election_created", "election", "status=draft"),
+            ("election_updated", "election", "status=draft;fields=title,candidates"),
+            ("election_title_changed", "election", "old_title=Old;new_title=New"),
+            ("election_created", "election", "status=active"),
+            ("key_generated", "election", None),
+            ("eligibility_changed", "election", f"change=added;voter_id={actor.id}"),
+            ("election_deadline_extended", "election", "old_end_date=A;new_end_date=B"),
+            ("vote_cast", "ballot", "election=1"),
+            ("election_closed", "election", "reason=manual"),
+            ("results_published", "election", "reason=manual"),
+            ("user_status_changed", "user", "old_status=active;new_status=inactive"),
+            ("user_suspended", "user", "old_status=active;new_status=suspended"),
+            ("user_unsuspended", "user", "old_status=suspended;new_status=active"),
+            ("election_deleted", "election", "status=draft"),
+            ("demo_reset_executed", "database", "scope=all_application_tables"),
+        ]
+
+        for action, entity_type, details in workflow:
+            log_event(
+                chain_db,
+                actor_user_id=actor.id,
+                action=action,
+                entity_type=entity_type,
+                details=details,
+            )
+        chain_db.commit()
+
+        result = verify_audit_chain(chain_db)
+
+        assert result.ok, [problem.message for problem in result.problems]
+        assert result.checked == len(workflow)
+
+        rows = entries(chain_db)
+        assert [row.sequence_number for row in rows] == list(range(1, len(workflow) + 1))
+
     def test_an_untouched_chain_verifies(self, chain_of_three):
         result = verify_audit_chain(chain_of_three)
 

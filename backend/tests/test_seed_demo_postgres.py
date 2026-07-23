@@ -141,6 +141,43 @@ def test_results_are_published(seeded_engine):
     assert unpublished == 0
 
 
+def test_destructive_reset_is_audited(seeded_engine):
+    """The --reset truncation must leave a record of itself.
+
+    It can only be written after the demo admin exists: the reset empties users,
+    audit_logs and audit_chain_head, and audit_logs.actor_user_id is NOT NULL
+    with a foreign key to users. So this is entry 1 of the rebuilt chain.
+    """
+    with seeded_engine.connect() as connection:
+        row = connection.execute(
+            sa.text(
+                "SELECT sequence_number, entity_type, details "
+                "FROM audit_logs WHERE action = 'demo_reset_executed'"
+            )
+        ).all()
+
+    assert len(row) == 1, "the destructive reset must be audited exactly once"
+    assert row[0].sequence_number == 1
+    assert row[0].entity_type == "database"
+    assert row[0].details == "scope=all_application_tables"
+
+
+def test_seeded_audit_chain_verifies(seeded_engine):
+    """Seeding runs the real workflows, so the chain it builds must verify."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.security.audit import verify_audit_chain
+
+    session = sessionmaker(bind=seeded_engine)()
+    try:
+        result = verify_audit_chain(session)
+    finally:
+        session.close()
+
+    assert result.ok, [problem.message for problem in result.problems]
+    assert result.checked > 0
+
+
 def test_close_and_publication_are_audited(seeded_engine):
     """Proof the production close path ran, rather than a seed-only shortcut."""
     with seeded_engine.connect() as connection:

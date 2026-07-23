@@ -40,6 +40,15 @@ def _eligibility_details(change: str, voter_id: UUID) -> str:
     return f"change={change};voter_id={voter_id}"
 
 
+def _title_change_details(old_title: str | None, new_title: str | None) -> str:
+    """Details for an election_title_changed event.
+
+    Election titles are organisational labels, not personal data, so recording
+    both sides of the change is safe and is what makes the event reviewable.
+    """
+    return f"old_title={old_title};new_title={new_title}"
+
+
 def _validate_ballot_configuration(
     ballot_type: BallotType,
     max_selections: int,
@@ -106,6 +115,15 @@ def createElectionDraft(
             display_order=candidate_data.display_order or index,
         )
         db.add(candidate)
+
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_created",
+        entity_type="election",
+        entity_id=election.id,
+        details="status=draft",
+    )
 
     db.commit()
 
@@ -174,6 +192,18 @@ def createElection(
 
     db.add(election)
     db.flush()  # gives election.id before commit
+
+    # Logged before the key and eligibility events so the chain reads in the
+    # order the work actually happened. A rollback later in this handler discards
+    # all three together.
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_created",
+        entity_type="election",
+        entity_id=election.id,
+        details="status=active",
+    )
 
     create_and_store_keypair(db, election)
     log_event(
@@ -416,20 +446,29 @@ def updateElection(
             detail="End date must be after start date",
         )
 
+    # Captured before any assignment so the title event can report both sides.
+    old_title = election.title
+    changed_fields = []
+
     if payload.title is not None:
         election.title = payload.title
+        changed_fields.append("title")
 
     if payload.description is not None:
         election.description = payload.description
+        changed_fields.append("description")
 
     if payload.start_date is not None:
         election.start_date = payload.start_date
+        changed_fields.append("start_date")
 
     if payload.end_date is not None:
         election.end_date = payload.end_date
+        changed_fields.append("end_date")
 
     # Optional: replace candidate list if candidates are provided
     if payload.candidates is not None:
+        changed_fields.append("candidates")
         if len(payload.candidates) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -461,9 +500,34 @@ def updateElection(
 
     if payload.ballot_type is not None:
         election.ballot_type = payload.ballot_type
+        changed_fields.append("ballot_type")
 
     if payload.max_selections is not None:
         election.max_selections = payload.max_selections
+        changed_fields.append("max_selections")
+
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_updated",
+        entity_type="election",
+        entity_id=election.id,
+        # Field names only — never the submitted values, which would put
+        # candidate names into the audit trail.
+        details=f"status=draft;fields={','.join(changed_fields) or 'none'}",
+    )
+
+    # A separate event because a rename is worth finding on its own, and it is
+    # the one field where both old and new values are safe to keep.
+    if payload.title is not None and payload.title != old_title:
+        log_event(
+            db,
+            actor_user_id=current_organizer.id,
+            action="election_title_changed",
+            entity_type="election",
+            entity_id=election.id,
+            details=_title_change_details(old_title, election.title),
+        )
 
     db.commit()
 
@@ -505,6 +569,17 @@ def deleteElection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only draft elections can be deleted",
         )
+
+    # Logged before the row goes away. audit_logs.entity_id carries no foreign
+    # key, so the event outlives the election it describes — which is the point.
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_deleted",
+        entity_type="election",
+        entity_id=election.id,
+        details="status=draft",
+    )
 
     db.delete(election)
     db.commit()
@@ -548,10 +623,35 @@ def extendElectionDeadline(
             detail="New end date cannot be earlier than the current end date",
         )
 
+    old_end_date = election.end_date
+    old_title = election.title
+
     election.end_date = payload.new_end_date
 
     if payload.title is not None:
         election.title = payload.title
+
+    if election.end_date != old_end_date:
+        log_event(
+            db,
+            actor_user_id=current_organizer.id,
+            action="election_deadline_extended",
+            entity_type="election",
+            entity_id=election.id,
+            details=f"old_end_date={old_end_date};new_end_date={election.end_date}",
+        )
+
+    # This endpoint can rename an active election, so the same title event is
+    # emitted here rather than only on the draft-update path.
+    if payload.title is not None and payload.title != old_title:
+        log_event(
+            db,
+            actor_user_id=current_organizer.id,
+            action="election_title_changed",
+            entity_type="election",
+            entity_id=election.id,
+            details=_title_change_details(old_title, election.title),
+        )
 
     db.commit()
     db.refresh(election)

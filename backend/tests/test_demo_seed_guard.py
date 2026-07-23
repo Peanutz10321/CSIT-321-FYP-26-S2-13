@@ -135,6 +135,23 @@ def test_schema_behind_alembic_head_is_rejected():
         engine.dispose()
 
 
+class EmptyChainQuery:
+    """Stands in for the audit chain-head lookup in sessions that store nothing.
+
+    log_event reads the head through the session before appending. These fakes
+    hold no chain, so the lookup finds nothing and the helper starts a fresh one.
+    """
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def with_for_update(self, *args, **kwargs):
+        return self
+
+    def first(self):
+        return None
+
+
 class RecordingSession:
     """Records statements instead of running them, and never commits."""
 
@@ -192,6 +209,12 @@ def test_seed_commits_once_only_after_tally_and_verification(monkeypatch):
         def __init__(self):
             self.commit_calls = 0
             self.rollback_calls = 0
+            # Seeding with --reset now audits the reset, and log_event appends
+            # through this same session.
+            self.new = []
+
+        def query(self, *args, **kwargs):
+            return EmptyChainQuery()
 
         def add(self, value):
             pass

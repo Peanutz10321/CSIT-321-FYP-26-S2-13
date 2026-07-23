@@ -13,11 +13,21 @@ from app.schemas.user_schema import (
     UserResponse,
     UserStatusUpdateRequest,
 )
+from app.security.audit import log_event
 from app.security.security import require_system_admin
 from app.services.user_service import build_user_account
 
 
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
+
+
+def _status_change_details(old_status: UserStatus, new_status: UserStatus) -> str:
+    """Minimal details for an account status change.
+
+    Records the transition only. The target account is identified by the audit
+    row's entity_id, so no email, username, or external id is stored here.
+    """
+    return f"old_status={old_status.value};new_status={new_status.value}"
 
 
 @router.post(
@@ -63,6 +73,17 @@ def createOrganizer(
     db.add(organizer)
 
     try:
+        # Flush first so the new id exists for the audit row. It raises the same
+        # IntegrityError the commit would, so the duplicate path is unchanged.
+        db.flush()
+        log_event(
+            db,
+            actor_user_id=current_admin.id,
+            action="organizer_created",
+            entity_type="user",
+            entity_id=organizer.id,
+            details="role=organizer",
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -172,7 +193,18 @@ def updateUserStatus(
             detail="You cannot change your own status",
         )
 
+    old_status = user.status
     user.status = UserStatus(body.status)
+
+    log_event(
+        db,
+        actor_user_id=current_admin.id,
+        action="user_status_changed",
+        entity_type="user",
+        entity_id=user.id,
+        details=_status_change_details(old_status, user.status),
+    )
+
     db.commit()
     db.refresh(user)
 
@@ -203,7 +235,18 @@ def suspendUser(
             detail="You cannot change your own status",
         )
 
+    old_status = user.status
     user.status = UserStatus.suspended
+
+    log_event(
+        db,
+        actor_user_id=current_admin.id,
+        action="user_suspended",
+        entity_type="user",
+        entity_id=user.id,
+        details=_status_change_details(old_status, user.status),
+    )
+
     db.commit()
     db.refresh(user)
 
@@ -234,7 +277,18 @@ def unsuspendUser(
             detail="You cannot change your own status",
         )
 
+    old_status = user.status
     user.status = UserStatus.active
+
+    log_event(
+        db,
+        actor_user_id=current_admin.id,
+        action="user_unsuspended",
+        entity_type="user",
+        entity_id=user.id,
+        details=_status_change_details(old_status, user.status),
+    )
+
     db.commit()
     db.refresh(user)
 
