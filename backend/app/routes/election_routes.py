@@ -17,6 +17,7 @@ from app.security.audit import log_event
 from app.security.security import get_current_user, require_organizer
 from app.security.keystore import create_and_store_keypair, load_private_key
 from app.security.homomorphic import deserialize_public_key, homomorphic_tally
+from app.services.election_lock import lock_election_for_close
 
 from sqlalchemy.exc import IntegrityError
 from app.models.election_voter import ElectionVoter, EligibilityStatus
@@ -706,18 +707,13 @@ def getEligibleVoters(
 
 def _locked_election(db: Session, election_id: UUID) -> Election | None:
     """
-    Take the election row for this transaction. populate_existing() forces the
-    locked read to overwrite any copy already loaded in the session, so a caller
-    that had read the row earlier (e.g. the results endpoint) still re-reads the
-    committed state under the lock rather than a stale in-session copy.
+    Take the election row exclusively for this transaction.
+
+    The lock itself lives in app/services/election_lock.py because the vote path
+    takes a shared lock on the same row; keeping both modes in one module is what
+    makes the vote/close protocol reviewable in a single place.
     """
-    return (
-        db.query(Election)
-        .filter(Election.id == election_id)
-        .populate_existing()
-        .with_for_update()
-        .first()
-    )
+    return lock_election_for_close(db, election_id)
 
 
 def _tally_and_complete(

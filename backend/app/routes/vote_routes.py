@@ -18,6 +18,7 @@ from app.schemas.vote_schema import VoteCreate, VoteResponse, VoteHistoryRespons
 from app.security.audit import log_event
 from app.security.security import require_voter
 from app.security.homomorphic import deserialize_public_key, encrypt_ballot
+from app.services.election_lock import lock_election_for_vote
 
 
 router = APIRouter(prefix="/votes", tags=["Votes"])
@@ -29,7 +30,15 @@ def submitVote(
     db: Session = Depends(get_db),
     current_voter: User = Depends(require_voter),
 ):
-    election = db.query(Election).filter(Election.id == payload.election_id).first()
+    # Take the shared election lock FIRST, so status and deadline are read under
+    # it and stay valid until this transaction commits. Without the lock a close
+    # could tally between the status check and the insert below, leaving this
+    # voter holding a valid receipt for a ballot that was never counted.
+    #
+    # A close holds the row exclusively, so this call blocks while one is running
+    # and then re-reads the committed state — which is why the status check below
+    # correctly rejects the vote once the election has been completed.
+    election = lock_election_for_vote(db, payload.election_id)
 
     if not election:
         raise HTTPException(
