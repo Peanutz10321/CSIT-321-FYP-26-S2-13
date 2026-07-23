@@ -18,6 +18,7 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from scripts.destructive_test_guard import require_safe_postgres_test_database
 
@@ -222,7 +223,13 @@ def test_seed_does_not_stamp_or_bypass_alembic(seeded_engine):
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar_one()
 
-    assert revision == "0002_ballot_config"
+    # Compared against the migration repository rather than a literal, so adding
+    # a revision does not break this test for the wrong reason.
+    config = Config(os.path.join(BACKEND_ROOT, "alembic.ini"))
+    config.set_main_option("script_location", os.path.join(BACKEND_ROOT, "alembic"))
+    expected_head = ScriptDirectory.from_config(config).get_current_head()
+
+    assert revision == expected_head
 
 
 # ---------------------------------------------------------------------------

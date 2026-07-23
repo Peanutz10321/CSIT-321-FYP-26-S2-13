@@ -217,6 +217,97 @@ def test_downgrade_returns_to_baseline(upgraded_engine):
 
 
 # ---------------------------------------------------------------------------
+# 0003 — vote_hash renamed to ballot_commitment
+# ---------------------------------------------------------------------------
+
+
+def test_ballot_commitment_replaces_vote_hash(upgraded_engine):
+    columns = _columns(upgraded_engine, "ballots")
+
+    assert "ballot_commitment" in columns
+    assert "vote_hash" not in columns
+
+
+def test_commitment_rename_preserves_existing_values(pg_engine):
+    """A rename must carry data across, not drop and recreate the column."""
+    config = _alembic_config()
+    command.upgrade(config, "0002_ballot_config")
+
+    organizer_id = uuid.uuid4()
+    election_id = uuid.uuid4()
+    election_voter_id = uuid.uuid4()
+    ballot_id = uuid.uuid4()
+
+    with pg_engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO users (id, role, status, external_id, username, "
+                "email, password_hash) VALUES (:id, 'voter', 'active', "
+                "'VOTER-900', 'legacy_voter', 'legacy900@test.com', 'x')"
+            ),
+            {"id": organizer_id},
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO elections (id, organizer_id, title, status, start_date) "
+                "VALUES (:id, :organizer_id, 'Legacy', 'active', now())"
+            ),
+            {"id": election_id, "organizer_id": organizer_id},
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO election_voters (id, election_id, voter_id, "
+                "eligibility_status) VALUES (:id, :election_id, :voter_id, 'eligible')"
+            ),
+            {"id": election_voter_id, "election_id": election_id, "voter_id": organizer_id},
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO ballots (id, election_id, election_voter_id, "
+                "encrypted_vote, vote_hash, receipt_code, bulletin_status) VALUES "
+                "(:id, :election_id, :election_voter_id, 'ct', 'legacy-hash-value', "
+                "'RCPT-LEGACY01', 'published')"
+            ),
+            {
+                "id": ballot_id,
+                "election_id": election_id,
+                "election_voter_id": election_voter_id,
+            },
+        )
+
+    command.upgrade(config, "head")
+
+    with pg_engine.connect() as connection:
+        value = connection.execute(
+            sa.text("SELECT ballot_commitment FROM ballots WHERE id = :id"),
+            {"id": ballot_id},
+        ).scalar_one()
+
+    # Preserved verbatim: the migration deliberately does not recompute
+    # commitments, so a pre-existing value stays legacy and will not verify.
+    assert value == "legacy-hash-value"
+
+
+def test_commitment_rename_keeps_uniqueness_enforced(upgraded_engine):
+    """The unique constraint must follow the renamed column."""
+    enforced = [
+        set(constraint["column_names"])
+        for constraint in sa.inspect(upgraded_engine).get_unique_constraints("ballots")
+    ]
+
+    assert {"ballot_commitment"} in enforced
+    assert {"vote_hash"} not in enforced
+
+
+def test_commitment_rename_is_reversible(upgraded_engine):
+    command.downgrade(_alembic_config(), "0002_ballot_config")
+
+    columns = _columns(upgraded_engine, "ballots")
+    assert "vote_hash" in columns
+    assert "ballot_commitment" not in columns
+
+
+# ---------------------------------------------------------------------------
 # Constraint enforcement — the guarantees the security model depends on
 # ---------------------------------------------------------------------------
 
@@ -263,7 +354,7 @@ def seeded(upgraded_engine):
         connection.execute(
             sa.text(
                 "INSERT INTO ballots (id, election_id, election_voter_id, "
-                "encrypted_vote, vote_hash, receipt_code, bulletin_status) "
+                "encrypted_vote, ballot_commitment, receipt_code, bulletin_status) "
                 "VALUES (:ballot, :election, :election_voter, 'ct', 'hash-1', "
                 "'RCPT-1', 'published')"
             ),
@@ -286,7 +377,7 @@ def test_second_ballot_for_same_election_voter_is_rejected(seeded):
             connection.execute(
                 sa.text(
                     "INSERT INTO ballots (id, election_id, election_voter_id, "
-                    "encrypted_vote, vote_hash, receipt_code, bulletin_status) "
+                    "encrypted_vote, ballot_commitment, receipt_code, bulletin_status) "
                     "VALUES (:new_id, :election, :election_voter, 'ct2', "
                     "'hash-2', 'RCPT-2', 'published')"
                 ),
@@ -319,7 +410,7 @@ def test_duplicate_receipt_code_is_rejected(seeded):
             connection.execute(
                 sa.text(
                     "INSERT INTO ballots (id, election_id, election_voter_id, "
-                    "encrypted_vote, vote_hash, receipt_code, bulletin_status) "
+                    "encrypted_vote, ballot_commitment, receipt_code, bulletin_status) "
                     "VALUES (:id, :election, :election_voter, 'ct2', 'hash-2', "
                     "'RCPT-1', 'published')"  # duplicate receipt code
                 ),
@@ -331,7 +422,7 @@ def test_duplicate_receipt_code_is_rejected(seeded):
             )
 
 
-def test_duplicate_vote_hash_is_rejected(seeded):
+def test_duplicate_ballot_commitment_is_rejected(seeded):
     engine, ids = seeded
 
     with pytest.raises(sa.exc.IntegrityError):
@@ -356,7 +447,7 @@ def test_duplicate_vote_hash_is_rejected(seeded):
             connection.execute(
                 sa.text(
                     "INSERT INTO ballots (id, election_id, election_voter_id, "
-                    "encrypted_vote, vote_hash, receipt_code, bulletin_status) "
+                    "encrypted_vote, ballot_commitment, receipt_code, bulletin_status) "
                     "VALUES (:id, :election, :election_voter, 'ct2', 'hash-1', "
                     "'RCPT-2', 'published')"  # duplicate vote hash
                 ),

@@ -527,3 +527,201 @@ class TestMultiSelectVoting:
 
         assert response.status_code == 400
         assert "candidate" in response.json()["detail"].lower()
+
+# ---------------------------------------------------------------------------
+# Ballot commitment and receipt verification
+#
+# The commitment covers the ballot's complete ciphertext, so modifying a stored
+# ballot invalidates it. It does NOT prove the ballot was counted as cast: the
+# backend holds the signing secret.
+# ---------------------------------------------------------------------------
+
+
+def _stored_ballot(vote_id: str):
+    from app.models.ballot import Ballot
+
+    db = SessionLocal()
+    try:
+        return db.query(Ballot).filter(Ballot.id == UUID(vote_id)).first()
+    finally:
+        db.close()
+
+
+def _mutate_ballot(vote_id: str, **fields):
+    from app.models.ballot import Ballot
+
+    db = SessionLocal()
+    try:
+        ballot = db.query(Ballot).filter(Ballot.id == UUID(vote_id)).first()
+        assert ballot is not None
+        for name, value in fields.items():
+            setattr(ballot, name, value)
+        db.commit()
+    finally:
+        db.close()
+
+
+class TestBallotCommitment:
+    def test_receipt_returns_a_commitment(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+
+        response = client.post(
+            VOTE_BASE,
+            json={
+                "election_id": election["id"],
+                "candidate_id": election["candidates"][0]["id"],
+            },
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 201, response.text
+        assert len(response.json()["ballot_commitment"]) == 64
+
+    def test_stored_commitment_equals_the_one_in_the_receipt(
+        self, organizer_token, voter_user, voter_token
+    ):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        vote = client.post(
+            VOTE_BASE,
+            json={
+                "election_id": election["id"],
+                "candidate_id": election["candidates"][0]["id"],
+            },
+            headers=auth_header(voter_token),
+        ).json()
+
+        assert _stored_ballot(vote["id"]).ballot_commitment == vote["ballot_commitment"]
+
+    def test_two_ballots_get_different_commitments(self, organizer_token, voter_user, voter_token):
+        """Distinct ballots must never collide, even for the same voter and choice."""
+        commitments = set()
+
+        for _ in range(2):
+            election = prepare_active_election_with_voter(organizer_token, voter_user)
+            response = client.post(
+                VOTE_BASE,
+                json={
+                    "election_id": election["id"],
+                    "candidate_id": election["candidates"][0]["id"],
+                },
+                headers=auth_header(voter_token),
+            )
+            assert response.status_code == 201, response.text
+            commitments.add(response.json()["ballot_commitment"])
+
+        assert len(commitments) == 2
+
+
+class TestVerifyVote:
+    def _cast(self, organizer_token, voter_user, voter_token):
+        election = prepare_active_election_with_voter(organizer_token, voter_user)
+        response = client.post(
+            VOTE_BASE,
+            json={
+                "election_id": election["id"],
+                "candidate_id": election["candidates"][0]["id"],
+            },
+            headers=auth_header(voter_token),
+        )
+        assert response.status_code == 201, response.text
+        return election, response.json()
+
+    def test_an_untouched_ballot_verifies(self, organizer_token, voter_user, voter_token):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        response = client.get(
+            f"{VOTE_BASE}/{vote['id']}/verify",
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["verified"] is True
+
+    def test_a_tampered_ciphertext_fails_verification(
+        self, organizer_token, voter_user, voter_token
+    ):
+        """The property the old salted hash could not provide."""
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        _mutate_ballot(vote["id"], encrypted_vote='{"tampered":{"c":"1","e":0}}')
+
+        response = client.get(
+            f"{VOTE_BASE}/{vote['id']}/verify",
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["verified"] is False
+
+    def test_a_tampered_receipt_code_fails_verification(
+        self, organizer_token, voter_user, voter_token
+    ):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        _mutate_ballot(vote["id"], receipt_code="RCPT-TAMPERED0001")
+
+        assert (
+            client.get(
+                f"{VOTE_BASE}/{vote['id']}/verify",
+                headers=auth_header(voter_token),
+            ).json()["verified"]
+            is False
+        )
+
+    def test_a_tampered_submission_time_fails_verification(
+        self, organizer_token, voter_user, voter_token
+    ):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        _mutate_ballot(vote["id"], submitted_at=datetime(2020, 1, 1, 0, 0, 0))
+
+        assert (
+            client.get(
+                f"{VOTE_BASE}/{vote['id']}/verify",
+                headers=auth_header(voter_token),
+            ).json()["verified"]
+            is False
+        )
+
+    def test_a_legacy_commitment_fails_verification(
+        self, organizer_token, voter_user, voter_token
+    ):
+        """Ballots predating the scheme must report failure, never silent success."""
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        _mutate_ballot(vote["id"], ballot_commitment=uuid4().hex)
+
+        assert (
+            client.get(
+                f"{VOTE_BASE}/{vote['id']}/verify",
+                headers=auth_header(voter_token),
+            ).json()["verified"]
+            is False
+        )
+
+    def test_another_voter_cannot_verify_someone_elses_ballot(
+        self, organizer_token, voter_user, voter_token, other_voter_token
+    ):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        response = client.get(
+            f"{VOTE_BASE}/{vote['id']}/verify",
+            headers=auth_header(other_voter_token),
+        )
+
+        assert response.status_code == 404
+
+    def test_verification_requires_authentication(
+        self, organizer_token, voter_user, voter_token
+    ):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        assert client.get(f"{VOTE_BASE}/{vote['id']}/verify").status_code == 401
+
+    def test_verifying_an_unknown_ballot_returns_404(self, voter_token):
+        response = client.get(
+            f"{VOTE_BASE}/{uuid4()}/verify",
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 404

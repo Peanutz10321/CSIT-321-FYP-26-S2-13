@@ -936,9 +936,9 @@ class TestMultiSelectAbstentionResults:
             # Candidate names never appear in plaintext.
             for cand in candidates:
                 assert cand["name"] not in ballot.encrypted_vote
-                assert cand["name"] not in ballot.vote_hash
+                assert cand["name"] not in ballot.ballot_commitment
                 # The salted hash cannot encode/brute-force the choice.
-                assert cand["id"] not in ballot.vote_hash
+                assert cand["id"] not in ballot.ballot_commitment
 
             # Every candidate is a key (multi-hot structure), so the key set does not
             # reveal which candidates were selected — the selection is only in the
