@@ -1,10 +1,24 @@
+"""
+Seed a demo database.
+
+Destructive: with --reset this truncates every application table. See the guard
+conditions in scripts/demo_seed_guard.py and the runbook in MIGRATIONS.md.
+
+The completed demo election is produced by the real close/tally workflow, not by
+inserting a finished-looking election, so the published results are genuine
+homomorphic tally output and are verified before the script reports success.
+"""
+
+import argparse
 import hashlib
+import os
+import sys
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
-from app.database import Base, engine, SessionLocal
+from app.database import engine, SessionLocal
 
 # Import models so SQLAlchemy registers all tables
 import app.models.user
@@ -17,6 +31,7 @@ import app.models.candidate_result
 import app.models.audit_log
 
 from app.core.time import now_sgt
+from app.models.candidate_result import CandidateResult
 from app.models.user import User, UserRole, UserStatus
 from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
@@ -29,8 +44,52 @@ from app.security.homomorphic import (
 )
 from app.security.keystore import create_and_store_keypair
 
+# The single shared close/tally workflow, also used by the close endpoints and the
+# deadline auto-finalize. Importing it means the demo results come from exactly the
+# production path rather than a seed-only reimplementation.
+# (Relocating it into app/services/ is left to PR 4, which owns that module.)
+from app.routes.election_routes import _tally_and_complete
 
-DEMO_PASSWORD = "Demo12345!"
+from scripts.demo_seed_guard import (
+    require_demo_password,
+    require_reset_confirmation,
+    require_safe_demo_database,
+)
+
+
+# The tally the completed demo election must produce. Asserted against the stored
+# candidate_results after the real tally runs, so the printed summary can never
+# disagree with the database.
+EXPECTED_COMPLETED_TALLY = {
+    "Daniel Wong": 2,
+    "Emily Chen": 1,
+    "Farhan Aziz": 1,
+}
+
+
+def require_schema_at_head(db) -> None:
+    """Refuse to seed a database whose schema Alembic has not built.
+
+    The application no longer calls create_all() at startup (see MIGRATIONS.md),
+    and neither does this script: creating tables here would leave the database
+    with no alembic_version row, so a later `alembic upgrade head` would try to
+    create tables that already exist and fail.
+    """
+    inspector = inspect(db.get_bind())
+    tables = set(inspector.get_table_names())
+
+    if "alembic_version" not in tables:
+        raise RuntimeError(
+            "This database is not managed by Alembic. Run 'alembic upgrade head' "
+            "before seeding (see MIGRATIONS.md)."
+        )
+
+    missing = {"users", "elections", "ballots", "candidate_results"} - tables
+    if missing:
+        raise RuntimeError(
+            f"Schema is incomplete (missing: {', '.join(sorted(missing))}). "
+            f"Run 'alembic upgrade head' before seeding."
+        )
 
 
 def reset_tables(db):
@@ -49,7 +108,8 @@ def reset_tables(db):
     db.commit()
 
 
-def create_user(db, role, external_id, username, full_name, email, status=UserStatus.active):
+def create_user(db, role, external_id, username, full_name, email, password,
+                status=UserStatus.active):
     user = User(
         role=role,
         status=status,
@@ -57,7 +117,7 @@ def create_user(db, role, external_id, username, full_name, email, status=UserSt
         username=username,
         full_name=full_name,
         email=email,
-        password_hash=hash_password(DEMO_PASSWORD),
+        password_hash=hash_password(password),
     )
     db.add(user)
     db.flush()
@@ -131,12 +191,72 @@ def add_encrypted_ballot(db, election, voter_record, candidates, selected_candid
     return ballot
 
 
-def main():
-    Base.metadata.create_all(bind=engine)
+def verify_completed_tally(db, election, candidates) -> dict:
+    """Read back the stored results and confirm they match the expected tally.
+
+    This is what makes the printed summary trustworthy: the numbers reported at
+    the end are read from candidate_results after the homomorphic tally ran, not
+    asserted up front.
+    """
+    names_by_id = {candidate.id: candidate.name for candidate in candidates}
+
+    rows = (
+        db.query(CandidateResult)
+        .filter(CandidateResult.election_id == election.id)
+        .all()
+    )
+
+    if not rows:
+        raise RuntimeError(
+            "The completed demo election produced no candidate_results rows; "
+            "the tally did not run."
+        )
+
+    actual = {names_by_id[row.candidate_id]: row.total_votes for row in rows}
+
+    if actual != EXPECTED_COMPLETED_TALLY:
+        raise RuntimeError(
+            f"Seeded tally mismatch. Expected {EXPECTED_COMPLETED_TALLY}, "
+            f"stored results were {actual}."
+        )
+
+    if election.status != ElectionStatus.completed:
+        raise RuntimeError(
+            f"Completed demo election is in status '{election.status.value}', "
+            f"expected 'completed'."
+        )
+
+    return actual
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Truncate every application table before seeding. Destructive.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    # Fail closed before opening a session: wrong target, unarmed guard, or a
+    # missing password must all stop the run before anything is written.
+    require_safe_demo_database(
+        str(engine.url),
+        seed_allowed=os.getenv("DEMO_SEED_ALLOWED"),
+        allowed_hosts=os.getenv("DEMO_SEED_ALLOWED_HOSTS"),
+        allowed_databases=os.getenv("DEMO_SEED_ALLOWED_DATABASES"),
+    )
+    require_reset_confirmation(args.reset)
+    demo_password = require_demo_password(os.getenv("DEMO_SEED_PASSWORD"))
 
     db = SessionLocal()
 
     try:
+        require_schema_at_head(db)
         reset_tables(db)
 
         admin = create_user(
@@ -146,6 +266,7 @@ def main():
             "admin_demo",
             "Demo System Admin",
             "admin@demo.com",
+            demo_password,
         )
 
         organizer = create_user(
@@ -155,6 +276,7 @@ def main():
             "organizer_demo",
             "Demo Organizer",
             "organizer@demo.com",
+            demo_password,
         )
 
         voter1 = create_user(
@@ -164,6 +286,7 @@ def main():
             "voter1_demo",
             "Voter One",
             "voter1@demo.com",
+            demo_password,
         )
 
         voter2 = create_user(
@@ -173,6 +296,7 @@ def main():
             "voter2_demo",
             "Voter Two",
             "voter2@demo.com",
+            demo_password,
         )
 
         voter3 = create_user(
@@ -182,6 +306,7 @@ def main():
             "voter3_demo",
             "Voter Three",
             "voter3@demo.com",
+            demo_password,
         )
 
         voter4 = create_user(
@@ -191,6 +316,7 @@ def main():
             "voter4_demo",
             "Voter Four",
             "voter4@demo.com",
+            demo_password,
         )
 
         suspended_voter = create_user(
@@ -200,6 +326,7 @@ def main():
             "suspended_demo",
             "Suspended Voter",
             "suspended@demo.com",
+            demo_password,
             status=UserStatus.suspended,
         )
 
@@ -230,12 +357,17 @@ def main():
             [voter1, voter2, voter3, voter4],
         )
 
-        # Completed election for results demo
+        # Completed election for results demo.
+        #
+        # Created ACTIVE on purpose: the ballots are cast against a live election
+        # and the election is then closed through the real close/tally workflow
+        # below. Inserting it as already-completed would leave a finished-looking
+        # election with no candidate_results and no tally ever performed.
         completed_election = Election(
             organizer_id=organizer.id,
             title="Completed Organization Voting Event 2026",
             description="Completed demo election showing homomorphic tallying.",
-            status=ElectionStatus.completed,
+            status=ElectionStatus.active,
             start_date=now - timedelta(days=10),
             end_date=now - timedelta(days=5),
         )
@@ -255,10 +387,8 @@ def main():
             [voter1, voter2, voter3, voter4],
         )
 
-        # Final result should become:
-        # Daniel Wong = 2
-        # Emily Chen = 1
-        # Farhan Aziz = 1
+        # Two votes for Daniel Wong, one each for Emily Chen and Farhan Aziz.
+        # These are the inputs; the totals are whatever the tally computes.
         add_encrypted_ballot(db, completed_election, completed_voters[0], completed_candidates, completed_candidates[0])
         add_encrypted_ballot(db, completed_election, completed_voters[1], completed_candidates, completed_candidates[0])
         add_encrypted_ballot(db, completed_election, completed_voters[2], completed_candidates, completed_candidates[1])
@@ -266,20 +396,34 @@ def main():
 
         db.commit()
 
+        # Close through the production workflow: runs the homomorphic tally once,
+        # writes candidate_results, flips the status to completed, and records the
+        # election_closed and results_published audit events. Commits internally.
+        _tally_and_complete(
+            db,
+            completed_election,
+            organizer.id,
+            close_reason="demo_seed",
+        )
+
+        db.refresh(completed_election)
+        stored_tally = verify_completed_tally(db, completed_election, completed_candidates)
+
         print("Demo database seeded successfully.")
         print("")
-        print("Login accounts:")
-        print(f"Admin:     admin@demo.com / {DEMO_PASSWORD}")
-        print(f"Organizer: organizer@demo.com / {DEMO_PASSWORD}")
-        print(f"Voter:     voter1@demo.com / {DEMO_PASSWORD}")
-        print(f"Voter:     voter2@demo.com / {DEMO_PASSWORD}")
-        print(f"Suspended voter: suspended@demo.com / {DEMO_PASSWORD}")
+        print("Login accounts (password is the value of DEMO_SEED_PASSWORD):")
+        print("Admin:           admin@demo.com")
+        print("Organizer:       organizer@demo.com")
+        print("Voter:           voter1@demo.com")
+        print("Voter:           voter2@demo.com")
+        print("Suspended voter: suspended@demo.com")
         print("")
         print("Active voting event:")
         print("Community Leadership Voting Event 2026")
         print("")
-        print("Completed voting event expected result:")
-        print("Daniel Wong = 2, Emily Chen = 1, Farhan Aziz = 1")
+        print("Completed voting event, tallied and verified from candidate_results:")
+        for name, total in sorted(stored_tally.items(), key=lambda item: -item[1]):
+            print(f"  {name} = {total}")
 
     except Exception:
         db.rollback()
@@ -290,4 +434,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as error:
+        # Guard failures are operator errors, not crashes: report them plainly
+        # without a traceback.
+        print(f"seed_demo: {error}", file=sys.stderr)
+        sys.exit(1)
