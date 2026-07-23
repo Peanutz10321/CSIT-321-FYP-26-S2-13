@@ -145,10 +145,12 @@ its canonical input: ballot id, election id, receipt code, the **complete
 ciphertext**, a digest of the ballot configuration and candidate set, and the
 submission time. The same value is returned in the voter's receipt.
 
-The key comes from `RECEIPT_SIGNING_SECRET`, which is **required** — the app will
-not start without it. It is deliberately separate from `JWT_SECRET` and
-`KEYSTORE_MASTER_SECRET` so receipt signing can be rotated independently. Rotating
-it invalidates every existing commitment.
+The key comes from `RECEIPT_SIGNING_SECRET`, which is **required** and must contain
+at least 32 UTF-8 bytes. It must differ from both `JWT_SECRET` and
+`KEYSTORE_MASTER_SECRET`; the application refuses to start when these invariants
+are not met. Generate an independent random value, for example with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"`, and store it only
+in the deployment environment. Rotating it invalidates every existing commitment.
 
 Verify a ballot with `GET /votes/{vote_id}/verify` (the voter who cast it).
 
