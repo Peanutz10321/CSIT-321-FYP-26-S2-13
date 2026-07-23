@@ -93,6 +93,50 @@ that every model table and column exists, that nullability matches, and that the
 uniqueness constraints the application relies on are present — by column set
 rather than constraint name, since several were auto-named by PostgreSQL.
 
+## Seeding the demo database
+
+`scripts/seed_demo.py` is **destructive**: with `--reset` it truncates every
+application table. It refuses to run unless every safety and credential
+condition below holds.
+
+The schema must already exist — run `alembic upgrade head` first. The seed no
+longer creates tables itself, because doing so would leave the database without
+an `alembic_version` row and break the next upgrade. The script compares the
+database's current Alembic revision with the migration repository's current
+head; merely having an `alembic_version` table is not sufficient.
+
+```bash
+cd backend
+
+export DEMO_SEED_ALLOWED=true
+export DEMO_SEED_ALLOWED_HOSTS=localhost
+export DEMO_SEED_ALLOWED_DATABASES=evoting_demo   # the target database name
+export DEMO_SEED_PASSWORD='choose-a-password'     # no default; never printed
+
+python -m scripts.seed_demo --reset
+```
+
+| Variable / flag | Purpose |
+|---|---|
+| `DEMO_SEED_ALLOWED=true` | Arms the script. Nothing runs without it. |
+| `DEMO_SEED_ALLOWED_HOSTS` | Hosts that may be seeded. **Unset means refuse.** |
+| `DEMO_SEED_ALLOWED_DATABASES` | Database names that may be seeded. **Unset means refuse.** |
+| `DEMO_SEED_PASSWORD` | Password for every demo account. No default. |
+| `--reset` | Required before anything is truncated. |
+
+The allowlists are configuration rather than hardcoded values because the demo
+target legitimately differs per environment. They are required and empty by
+default, so an unset variable refuses the run instead of allowing it.
+
+The completed demo election is created **active**, given real encrypted ballots,
+and then closed through the same close/tally workflow the API uses. The script
+reads `candidate_results` back and aborts if the stored totals do not match the
+expected result, so the printed summary always reflects the database.
+
+Reset, population, tally, and result verification run in one PostgreSQL
+transaction. If any step fails, the transaction is rolled back and the data
+that existed before `--reset` is preserved.
+
 ## Running the PostgreSQL tests
 
 The migration and constraint tests need a real PostgreSQL instance and are
