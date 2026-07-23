@@ -135,24 +135,54 @@ def test_schema_behind_alembic_head_is_rejected():
         engine.dispose()
 
 
+class RecordingSession:
+    """Records statements instead of running them, and never commits."""
+
+    def __init__(self):
+        self.commit_calls = 0
+        self.statements = []
+
+    def execute(self, statement, parameters=None):
+        self.statement = statement
+        self.statements.append((str(statement), parameters))
+
+    def commit(self):
+        self.commit_calls += 1
+
+
 def test_reset_tables_does_not_commit_its_own_transaction():
     """The caller must be able to roll the truncation back if seeding fails."""
-
-    class RecordingSession:
-        def __init__(self):
-            self.commit_calls = 0
-
-        def execute(self, statement):
-            self.statement = statement
-
-        def commit(self):
-            self.commit_calls += 1
-
     db = RecordingSession()
 
     seed_demo.reset_tables(db)
 
     assert db.commit_calls == 0
+
+
+def test_reset_tables_restarts_the_audit_chain():
+    """Clearing audit_logs without resetting the head would leave a broken chain.
+
+    The next event would claim sequence N+1 with nothing before it, which
+    verify_audit_chain reports as tampering on a database that was only reseeded.
+    """
+    db = RecordingSession()
+
+    seed_demo.reset_tables(db)
+
+    truncate = next(sql for sql, _ in db.statements if "TRUNCATE" in sql)
+    assert "audit_logs" in truncate
+    assert "audit_chain_head" in truncate
+
+    reseed = [
+        (sql, params)
+        for sql, params in db.statements
+        if "INSERT INTO audit_chain_head" in sql
+    ]
+    assert len(reseed) == 1, "the chain head must be seeded back to genesis"
+
+    _, params = reseed[0]
+    assert params["id"] == seed_demo.CHAIN_ID
+    assert params["head_hash"] == seed_demo.GENESIS_HASH
 
 
 def test_seed_commits_once_only_after_tally_and_verification(monkeypatch):
