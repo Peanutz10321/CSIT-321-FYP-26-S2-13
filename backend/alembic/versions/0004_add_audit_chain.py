@@ -12,8 +12,8 @@ The hashing helper is imported from app.security.audit rather than copied. A
 copy would be frozen at today's format while verification kept using the
 application's, and the two would silently disagree about every backfilled row.
 
-Revision ID: 0003_audit_chain
-Revises: 0002_ballot_config
+Revision ID: 0004_audit_chain
+Revises: 0003_ballot_commitment
 """
 
 import sqlalchemy as sa
@@ -23,8 +23,8 @@ from app.core.time import now_sgt
 from app.security.audit import CHAIN_ID, GENESIS_HASH, compute_entry_hash
 
 
-revision = "0003_audit_chain"
-down_revision = "0002_ballot_config"
+revision = "0004_audit_chain"
+down_revision = "0003_ballot_commitment"
 branch_labels = None
 depends_on = None
 

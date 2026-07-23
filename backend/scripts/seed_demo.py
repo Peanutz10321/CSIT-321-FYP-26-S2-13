@@ -38,6 +38,7 @@ from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
+from app.security.audit import CHAIN_ID, GENESIS_HASH
 from app.security.password import hash_password
 from app.security.homomorphic import (
     deserialize_public_key,
@@ -105,7 +106,14 @@ def require_schema_at_head(db) -> None:
             "Run 'alembic upgrade head' before seeding."
         )
 
-    missing = {"users", "elections", "ballots", "candidate_results"} - tables
+    missing = {
+        "users",
+        "elections",
+        "ballots",
+        "candidate_results",
+        "audit_logs",
+        "audit_chain_head",
+    } - tables
     if missing:
         raise RuntimeError(
             f"Schema is incomplete (missing: {', '.join(sorted(missing))}). "
@@ -114,6 +122,11 @@ def require_schema_at_head(db) -> None:
 
 
 def reset_tables(db):
+    """Empty every application table, including the audit chain.
+
+    Only ever reached after the guards in main() have confirmed an explicit
+    --reset, DEMO_SEED_ALLOWED=true, and an allowlisted host and database.
+    """
     db.execute(text("""
         TRUNCATE TABLE
             candidate_results,
@@ -123,9 +136,24 @@ def reset_tables(db):
             election_keys,
             elections,
             audit_logs,
+            audit_chain_head,
             users
         RESTART IDENTITY CASCADE;
     """))
+
+    # The chain head has to go back to genesis with the entries it described.
+    # Truncating audit_logs while leaving the old head behind would make the
+    # next event claim sequence N+1 with nothing before it — which
+    # verify_audit_chain would correctly report as a broken chain on a database
+    # that had merely been reseeded.
+    db.execute(
+        text(
+            "INSERT INTO audit_chain_head "
+            "(id, sequence_number, head_hash, updated_at) "
+            "VALUES (:id, 0, :head_hash, :updated_at)"
+        ),
+        {"id": CHAIN_ID, "head_hash": GENESIS_HASH, "updated_at": now_sgt()},
+    )
 
 
 def create_user(db, role, external_id, username, full_name, email, password,

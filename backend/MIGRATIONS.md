@@ -26,6 +26,7 @@ alembic -x db_url="$SOME_DATABASE_URL" upgrade head
 | `0001_baseline` | The schema as `create_all()` had already built it on the deployed database, before the multi-select ballot work. |
 | `0002_ballot_config` | Adds `elections.ballot_type` and `elections.max_selections`, plus the `ballot_type` enum type. |
 | `0003_ballot_commitment` | Renames `ballots.vote_hash` to `ballots.ballot_commitment`. Data is preserved, but values written before this revision are old salted hashes and will not verify. |
+| `0004_audit_chain` | Adds `audit_logs.sequence_number`, `previous_hash` and `entry_hash`, plus the `audit_chain_head` table. Backfills existing audit rows into a valid chain and seeds the head. |
 
 The split exists so that both a fresh database and the already-deployed database
 can reach the same final schema.
@@ -166,6 +167,59 @@ Ballots created before revision `0003` carry the old salted hash and will report
 `verified: false`. That is intentional: recomputing their commitments would attest
 to whatever the database happens to hold. Reseed or re-cast to obtain verifiable
 ballots.
+
+## Audit log hash chain
+
+Every row in `audit_logs` carries its position (`sequence_number`), the hash of
+the entry before it (`previous_hash`), and a SHA-256 over its own canonical JSON
+(`entry_hash`). Because `previous_hash` is part of the hashed content, each entry
+commits to the whole history before it. Appends take a row lock on the singleton
+`audit_chain_head` row, so concurrent writers cannot claim the same position or
+fork the chain.
+
+Check a database with `verify_audit_chain(db)` from `app.security.audit`. It
+reports modified, missing, reordered, broken-link and truncated entries.
+
+### Revoking UPDATE and DELETE
+
+The chain makes tampering *detectable*. Database permissions are what make it
+*hard*: the application only ever appends, so the role it connects as should not
+be able to update or delete audit rows at all.
+
+Run this as an owner/superuser, substituting your own role name for
+`<app_role>` — the role in your `DATABASE_URL`, which differs per deployment, so
+it is deliberately not hardcoded here:
+
+```sql
+-- Replace <app_role> with the role the backend connects as.
+REVOKE UPDATE, DELETE, TRUNCATE ON TABLE audit_logs FROM <app_role>;
+GRANT  INSERT, SELECT              ON TABLE audit_logs TO   <app_role>;
+
+-- The head row is updated on every append, so UPDATE stays. It carries no
+-- history of its own; the entries it points at are the protected records.
+REVOKE DELETE, TRUNCATE ON TABLE audit_chain_head FROM <app_role>;
+GRANT  INSERT, SELECT, UPDATE ON TABLE audit_chain_head TO <app_role>;
+```
+
+Confirm the result:
+
+```sql
+SELECT privilege_type
+FROM information_schema.role_table_grants
+WHERE table_name = 'audit_logs' AND grantee = '<app_role>';
+-- expect only INSERT and SELECT
+```
+
+Note the demo seed's `--reset` truncates `audit_logs` and `audit_chain_head`, so
+it needs a role that still has TRUNCATE. Run it as an admin role against a demo
+database, never as the application role against a shared one.
+
+**What this does not do:** the database owner, a Supabase project administrator,
+and anyone able to run migrations can still rewrite rows and recompute the chain.
+Detecting that needs a chain-head checkpoint stored outside the database, which
+is not implemented. Do not describe the audit log as immutable — the accurate
+claim is that entries are hash-chained and the application role cannot update or
+delete them.
 
 ## Running the PostgreSQL tests
 
