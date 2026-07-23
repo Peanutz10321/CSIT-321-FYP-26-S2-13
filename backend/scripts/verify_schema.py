@@ -48,7 +48,7 @@ REQUIRED_UNIQUE = {
     "ballots": [
         {"election_voter_id"},
         {"receipt_code"},
-        {"vote_hash"},
+        {"ballot_commitment"},
     ],
     # A voter is enrolled in a given election at most once.
     "election_voters": [

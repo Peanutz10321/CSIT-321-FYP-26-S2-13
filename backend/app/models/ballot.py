@@ -23,7 +23,10 @@ class Ballot(Base):
     election_voter_id = Column(UUID(as_uuid=True), ForeignKey("election_voters.id"), nullable=False, unique=True)
 
     encrypted_vote = Column(Text, nullable=False)
-    vote_hash = Column(String, nullable=False, unique=True)
+    # HMAC-SHA256 over the canonical ballot input (see app/security/ballot_commitment.py).
+    # Unique as a corruption tripwire: two ballots can never legitimately share one,
+    # because the ballot id is part of the committed input.
+    ballot_commitment = Column(String, nullable=False, unique=True)
     receipt_code = Column(String, nullable=False, unique=True)
 
     submitted_at = Column(DateTime, nullable=False, server_default=func.now())
