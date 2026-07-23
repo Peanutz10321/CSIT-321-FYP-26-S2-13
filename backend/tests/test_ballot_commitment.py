@@ -10,9 +10,12 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
+from app.config import Settings
 from app.security.ballot_commitment import (
     COMMITMENT_SCHEME_VERSION,
+    _canonical_json,
     ballot_configuration_digest,
     build_commitment_input,
     commitment_matches,
@@ -34,6 +37,18 @@ def _inputs(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def _settings(receipt_signing_secret: str, **overrides) -> Settings:
+    values = {
+        "DATABASE_URL": "sqlite://",
+        "JWT_SECRET": "j" * 32,
+        "KEYSTORE_MASTER_SECRET": "k" * 32,
+        "RECEIPT_SIGNING_SECRET": receipt_signing_secret,
+        "TESTING": True,
+    }
+    values.update(overrides)
+    return Settings(**values, _env_file=None)
 
 
 # ---------------------------------------------------------------------------
@@ -63,14 +78,37 @@ def test_commitment_depends_on_the_signing_secret(monkeypatch):
 
 def test_canonical_input_is_order_independent():
     """Field ordering must not change the serialisation."""
-    inputs = _inputs()
-    forward = build_commitment_input(**inputs)
-    shuffled = dict(reversed(list(forward.items())))
-    assert forward == shuffled
+    forward = {"z": 1, "a": 2}
+    reversed_order = {"a": 2, "z": 1}
+
+    assert _canonical_json(forward) == _canonical_json(reversed_order)
 
 
 def test_scheme_version_is_part_of_the_committed_input():
     assert build_commitment_input(**_inputs())["v"] == COMMITMENT_SCHEME_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Signing-secret configuration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("secret", ["", "short", "a" * 31])
+def test_receipt_signing_secret_rejects_values_shorter_than_32_bytes(secret):
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        _settings(secret)
+
+
+def test_receipt_signing_secret_accepts_32_bytes():
+    assert _settings("r" * 32).RECEIPT_SIGNING_SECRET == "r" * 32
+
+
+@pytest.mark.parametrize("other_secret", ["JWT_SECRET", "KEYSTORE_MASTER_SECRET"])
+def test_receipt_signing_secret_must_be_dedicated(other_secret):
+    shared_secret = "s" * 32
+
+    with pytest.raises(ValidationError, match="must be different"):
+        _settings(shared_secret, **{other_secret: shared_secret})
 
 
 # ---------------------------------------------------------------------------
@@ -91,8 +129,12 @@ def test_scheme_version_is_part_of_the_committed_input():
 )
 def test_changing_any_committed_field_changes_the_commitment(field, replacement):
     """This is the whole point: tampering with a stored ballot must be detectable."""
-    baseline = compute_ballot_commitment(**_inputs())
-    tampered = compute_ballot_commitment(**_inputs(**{field: replacement}))
+    inputs = _inputs()
+    tampered_inputs = dict(inputs)
+    tampered_inputs[field] = replacement
+
+    baseline = compute_ballot_commitment(**inputs)
+    tampered = compute_ballot_commitment(**tampered_inputs)
 
     assert tampered != baseline
 
@@ -171,7 +213,16 @@ def test_commitment_matches_rejects_a_different_value():
     assert not commitment_matches(compute_ballot_commitment(**_inputs()), "0" * 64)
 
 
-@pytest.mark.parametrize("stored", [None, ""])
-def test_commitment_matches_rejects_a_missing_stored_value(stored):
-    """A legacy ballot with no usable commitment must never verify."""
+@pytest.mark.parametrize(
+    "stored",
+    [
+        None,
+        "",
+        "0" * 63,
+        "g" * 64,
+        "\N{LATIN SMALL LETTER E WITH ACUTE}" * 64,
+    ],
+)
+def test_commitment_matches_rejects_a_malformed_stored_value(stored):
+    """A malformed or legacy value must fail closed, never raise."""
     assert not commitment_matches(compute_ballot_commitment(**_inputs()), stored)

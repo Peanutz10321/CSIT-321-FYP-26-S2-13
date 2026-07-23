@@ -699,6 +699,24 @@ class TestVerifyVote:
             is False
         )
 
+    def test_a_non_ascii_commitment_fails_closed(
+        self, organizer_token, voter_user, voter_token
+    ):
+        _, vote = self._cast(organizer_token, voter_user, voter_token)
+
+        _mutate_ballot(
+            vote["id"],
+            ballot_commitment="\N{LATIN SMALL LETTER E WITH ACUTE}" * 64,
+        )
+
+        response = client.get(
+            f"{VOTE_BASE}/{vote['id']}/verify",
+            headers=auth_header(voter_token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["verified"] is False
+
     def test_another_voter_cannot_verify_someone_elses_ballot(
         self, organizer_token, voter_user, voter_token, other_voter_token
     ):
