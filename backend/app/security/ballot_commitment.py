@@ -38,6 +38,7 @@ from app.config import settings
 # Bumping this changes every commitment. It exists so a future change to the
 # canonical form is an explicit, detectable migration rather than silent drift.
 COMMITMENT_SCHEME_VERSION = 1
+_LOWERCASE_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def _canonical_json(payload: dict) -> bytes:
@@ -124,8 +125,12 @@ def compute_ballot_commitment(
 
 
 def commitment_matches(expected: str, stored: str | None) -> bool:
-    """Constant-time comparison, so a mismatch leaks no positional information."""
-    if not stored:
+    """Fail closed on malformed storage, then compare valid values in constant time."""
+    if (
+        not isinstance(stored, str)
+        or len(stored) != 64
+        or any(character not in _LOWERCASE_HEX_DIGITS for character in stored)
+    ):
         return False
 
     return hmac.compare_digest(expected, stored)
