@@ -65,6 +65,11 @@ REQUIRED_UNIQUE = {
         {"username"},
         {"external_id"},
     ],
+    # One audit entry per position in the hash chain. Without this a duplicated
+    # sequence number could be inserted and the chain would have two "entry N"s.
+    "audit_logs": [
+        {"sequence_number"},
+    ],
 }
 
 
