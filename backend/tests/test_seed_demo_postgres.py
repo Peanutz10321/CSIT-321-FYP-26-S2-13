@@ -67,8 +67,8 @@ def load_seed(monkeypatch):
     importlib.reload(scripts.seed_demo)
 
 
-def _rebuild_schema(upgrade: bool = True):
-    """Drop and recreate the public schema, optionally migrating it to head."""
+def _rebuild_schema(revision: str | None = "head"):
+    """Drop public and optionally migrate the replacement schema to a revision."""
     require_safe_postgres_test_database(
         TEST_POSTGRES_URL,
         destructive_tests_allowed=os.getenv("ALLOW_DESTRUCTIVE_DB_TESTS"),
@@ -80,11 +80,11 @@ def _rebuild_schema(upgrade: bool = True):
         connection.execute(sa.text("CREATE SCHEMA public"))
     engine.dispose()
 
-    if upgrade:
+    if revision:
         config = Config(os.path.join(BACKEND_ROOT, "alembic.ini"))
         config.set_main_option("script_location", os.path.join(BACKEND_ROOT, "alembic"))
         config.set_main_option("sqlalchemy.url", TEST_POSTGRES_URL)
-        command.upgrade(config, "head")
+        command.upgrade(config, revision)
 
 
 @pytest.fixture
@@ -188,6 +188,21 @@ def test_seeded_ballots_hold_real_ciphertext(seeded_engine):
             assert len(ciphertext) > 100, "ciphertext is too short to be Paillier output"
 
 
+def test_seeded_ballots_are_inside_the_election_window(seeded_engine):
+    with seeded_engine.connect() as connection:
+        invalid_ballots = connection.execute(
+            sa.text(
+                "SELECT count(*) "
+                "FROM ballots b "
+                "JOIN elections e ON e.id = b.election_id "
+                "WHERE b.submitted_at < e.start_date "
+                "OR b.submitted_at > e.end_date"
+            )
+        ).scalar_one()
+
+    assert invalid_ballots == 0
+
+
 def test_active_demo_election_is_left_open(seeded_engine):
     with seeded_engine.connect() as connection:
         status = connection.execute(
@@ -248,9 +263,81 @@ def test_seed_refuses_without_a_password(load_seed, monkeypatch):
 
 def test_seed_refuses_on_a_database_without_alembic(load_seed):
     """A database built by something other than Alembic must be rejected."""
-    _rebuild_schema(upgrade=False)
+    _rebuild_schema(revision=None)
 
     seed = load_seed()
 
     with pytest.raises(RuntimeError, match="alembic upgrade head"):
         seed.main(["--reset"])
+
+
+def test_seed_refuses_behind_head_without_deleting_existing_data(load_seed):
+    """A stamped but outdated database must be rejected before TRUNCATE."""
+    _rebuild_schema(revision="0001_baseline")
+
+    engine = sa.create_engine(TEST_POSTGRES_URL)
+    sentinel_id = "00000000-0000-0000-0000-000000000001"
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO users "
+                "(id, role, status, external_id, username, full_name, email, password_hash) "
+                "VALUES "
+                "(:id, 'voter', 'active', 'SENTINEL-001', 'sentinel', "
+                "'Sentinel User', 'sentinel@example.test', 'not-a-real-hash')"
+            ),
+            {"id": sentinel_id},
+        )
+
+    seed = load_seed()
+
+    with pytest.raises(RuntimeError, match="Alembic head"):
+        seed.main(["--reset"])
+
+    with engine.connect() as connection:
+        remaining = connection.execute(
+            sa.text("SELECT count(*) FROM users WHERE id = :id"),
+            {"id": sentinel_id},
+        ).scalar_one()
+    engine.dispose()
+
+    assert remaining == 1
+
+
+def test_seed_rolls_back_reset_when_population_fails(load_seed, monkeypatch):
+    """A failure after TRUNCATE must restore the database's previous contents."""
+    _rebuild_schema()
+
+    engine = sa.create_engine(TEST_POSTGRES_URL)
+    sentinel_id = "00000000-0000-0000-0000-000000000002"
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO users "
+                "(id, role, status, external_id, username, full_name, email, password_hash) "
+                "VALUES "
+                "(:id, 'voter', 'active', 'SENTINEL-002', 'rollback_sentinel', "
+                "'Rollback Sentinel', 'rollback-sentinel@example.test', "
+                "'not-a-real-hash')"
+            ),
+            {"id": sentinel_id},
+        )
+
+    seed = load_seed()
+    monkeypatch.setattr(
+        seed,
+        "create_user",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("forced failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="forced failure"):
+        seed.main(["--reset"])
+
+    with engine.connect() as connection:
+        remaining = connection.execute(
+            sa.text("SELECT count(*) FROM users WHERE id = :id"),
+            {"id": sentinel_id},
+        ).scalar_one()
+    engine.dispose()
+
+    assert remaining == 1

@@ -1,7 +1,15 @@
 """Unit tests for the demo-seed fail-closed guard."""
 
-import pytest
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+from uuid import uuid4
 
+import pytest
+import sqlalchemy as sa
+from sqlalchemy.orm import Session
+
+from app.database import Base
+import scripts.seed_demo as seed_demo
 from scripts.demo_seed_guard import (
     require_demo_password,
     require_reset_confirmation,
@@ -100,3 +108,158 @@ def test_password_must_meet_minimum_length():
 
 def test_password_is_returned_when_valid():
     assert require_demo_password("longenough123") == "longenough123"
+
+
+def test_schema_behind_alembic_head_is_rejected():
+    """Having an alembic_version row is not enough; it must equal current head."""
+    engine = sa.create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO alembic_version (version_num) "
+                "VALUES ('0001_baseline')"
+            )
+        )
+
+    try:
+        with Session(engine) as db:
+            with pytest.raises(RuntimeError, match="Alembic head"):
+                seed_demo.require_schema_at_head(db)
+    finally:
+        engine.dispose()
+
+
+def test_reset_tables_does_not_commit_its_own_transaction():
+    """The caller must be able to roll the truncation back if seeding fails."""
+
+    class RecordingSession:
+        def __init__(self):
+            self.commit_calls = 0
+
+        def execute(self, statement):
+            self.statement = statement
+
+        def commit(self):
+            self.commit_calls += 1
+
+    db = RecordingSession()
+
+    seed_demo.reset_tables(db)
+
+    assert db.commit_calls == 0
+
+
+def test_seed_commits_once_only_after_tally_and_verification(monkeypatch):
+    """No partial seed state may be committed before the final verification."""
+
+    class RecordingSession:
+        def __init__(self):
+            self.commit_calls = 0
+            self.rollback_calls = 0
+
+        def add(self, value):
+            pass
+
+        def flush(self):
+            pass
+
+        def refresh(self, value):
+            pass
+
+        def commit(self):
+            self.commit_calls += 1
+
+        def rollback(self):
+            self.rollback_calls += 1
+
+        def close(self):
+            pass
+
+    db = RecordingSession()
+    observed = {}
+
+    monkeypatch.setattr(seed_demo, "SessionLocal", lambda: db)
+    monkeypatch.setattr(seed_demo, "require_safe_demo_database", lambda *args, **kwargs: None)
+    monkeypatch.setattr(seed_demo, "require_reset_confirmation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(seed_demo, "require_demo_password", lambda value: "safe-password")
+    monkeypatch.setattr(seed_demo, "require_schema_at_head", lambda session: None)
+    monkeypatch.setattr(seed_demo, "reset_tables", lambda session: None)
+    monkeypatch.setattr(
+        seed_demo,
+        "create_user",
+        lambda *args, **kwargs: SimpleNamespace(id=uuid4()),
+    )
+    monkeypatch.setattr(seed_demo, "create_and_store_keypair", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        seed_demo,
+        "create_candidates",
+        lambda *args, **kwargs: [
+            SimpleNamespace(id=uuid4(), name=name)
+            for name in args[2]
+        ],
+    )
+    monkeypatch.setattr(
+        seed_demo,
+        "add_eligible_voters",
+        lambda *args, **kwargs: [SimpleNamespace(id=uuid4()) for _ in args[2]],
+    )
+    monkeypatch.setattr(seed_demo, "add_encrypted_ballot", lambda *args, **kwargs: None)
+
+    def fake_tally(*args, **kwargs):
+        observed["commits_before_tally"] = db.commit_calls
+        observed["commit_requested"] = kwargs.get("commit")
+
+    monkeypatch.setattr(seed_demo, "_tally_and_complete", fake_tally)
+    monkeypatch.setattr(
+        seed_demo,
+        "verify_completed_tally",
+        lambda *args, **kwargs: seed_demo.EXPECTED_COMPLETED_TALLY,
+    )
+
+    seed_demo.main(["--reset"])
+
+    assert observed["commits_before_tally"] == 0
+    assert observed["commit_requested"] is False
+    assert db.commit_calls == 1
+
+
+def test_seeded_ballot_timestamp_is_inside_election_window(monkeypatch):
+    """Historical demo ballots must still be valid ballots, not late votes."""
+
+    class RecordingSession:
+        def add(self, value):
+            self.added = value
+
+        def flush(self):
+            pass
+
+    start = datetime(2026, 1, 1)
+    end = datetime(2026, 1, 5)
+    election = SimpleNamespace(
+        id=uuid4(),
+        public_key_n="demo-key",
+        start_date=start,
+        end_date=end,
+    )
+    voter_record = SimpleNamespace(id=uuid4(), voted_at=None)
+    candidates = [SimpleNamespace(id=uuid4()) for _ in range(3)]
+
+    monkeypatch.setattr(seed_demo, "deserialize_public_key", lambda value: object())
+    monkeypatch.setattr(seed_demo, "encrypt_vote", lambda *args, **kwargs: '{"ciphertext": "x"}')
+    monkeypatch.setattr(seed_demo, "now_sgt", lambda: datetime(2026, 1, 10))
+
+    ballot = seed_demo.add_encrypted_ballot(
+        RecordingSession(),
+        election,
+        voter_record,
+        candidates,
+        candidates[0],
+    )
+
+    assert start <= ballot.submitted_at <= end
+    assert voter_record.voted_at == ballot.submitted_at
