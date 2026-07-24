@@ -1,0 +1,7 @@
+{
+  "GHSA-qwww-vcr4-c8h2": {
+    "active": true,
+    "expiry": "2026-08-31",
+    "notes": "React Router RSC-Mode CSRF bypass. This frontend is a Vite single-page app that does not use React Server Components, so the vulnerable RSC action path is unreachable. Every react-router-dom 7.x release is hit by at least one high advisory: <=7.17.0 carries a larger cluster (incl. an unauthenticated RCE and SPA-relevant XSS/open-redirects), while 7.12.0-8.2.0 carries this RSC-only advisory. 7.18.1 is the safest available pin; this single, non-applicable advisory is suppressed deliberately. Re-review by the expiry date. Remove the exception when a supported fixed v7 release ships, or replace it as part of a planned, tested migration to v8."
+  }
+}

@@ -1,4 +1,8 @@
-const BASE_URL = 'http://localhost:8000'
+import { buildApiUrl, resolveApiBaseUrl } from './apiConfig.js'
+
+// Resolved once at module load. In a production build this throws when
+// VITE_API_BASE_URL is unset, rather than silently shipping a localhost URL.
+const BASE_URL = resolveApiBaseUrl(import.meta.env)
 const TOKEN_STORAGE_KEY = 'authToken'
 
 function getAuthToken() {
@@ -22,7 +26,7 @@ function getHeaders(isJson = true) {
 
 async function request(path, options = {}) {
   const { method = 'GET', data, headers = {}, ...rest } = options
-  const url = `${BASE_URL}${path}`
+  const url = buildApiUrl(BASE_URL, path)
 
   const response = await fetch(url, {
     method,

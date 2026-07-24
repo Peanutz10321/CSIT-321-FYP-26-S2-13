@@ -108,7 +108,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Reports against the committed lockfile. Nothing is auto-remediated here:
+      # `npm audit fix` can silently change resolved versions, so any finding is
+      # triaged and fixed deliberately in its own change. Runs through
+      # better-npm-audit so a single advisory can be suppressed with a written
+      # justification in .nsprc (see the react-router entry there) instead of
+      # lowering the level or ignoring the whole report.
+      - name: Audit frontend dependencies
+        run: npm run audit
+
+      - name: Lint
+        run: npm run lint
+
       - name: Build
+        # Production builds require an explicit API base URL; the value below is a
+        # placeholder that only proves the build succeeds when one is supplied.
+        env:
+          VITE_API_BASE_URL: https://api.ci.invalid
         run: npm run build
 
       - name: Run tests
