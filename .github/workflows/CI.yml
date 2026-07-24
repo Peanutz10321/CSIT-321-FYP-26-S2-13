@@ -50,7 +50,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # Audits what actually ships, not the development environment.
+      #
+      # PYSEC-2026-1325 (CVE-2024-23342) is a Minerva timing attack in `ecdsa`, a
+      # transitive dependency of python-jose. Upstream has published NO fix and
+      # considers side-channel resistance out of scope. It is ignored here because
+      # this API signs JWTs with HS256 (HMAC) and contains no ECDSA code path, so
+      # the vulnerable signing/keygen/ECDH routines are never reached.
+      #
+      # This is ENFORCED, not assumed: JWT_ALGORITHM is typed Literal["HS256"] in
+      # app/config.py, so the app refuses to start with any ES*/RS* algorithm
+      # (pinned by tests/test_cors_config.py). If that pin is ever widened, remove
+      # this ignore because the vulnerable path would become reachable.
+      - name: Audit backend dependencies
+        run: |
+          pip-audit -r requirements.txt --strict \
+            --ignore-vuln PYSEC-2026-1325
 
       - name: Run tests
         env:

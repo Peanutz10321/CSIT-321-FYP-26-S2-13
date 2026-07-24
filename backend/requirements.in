@@ -1,0 +1,31 @@
+# Production dependencies — direct requirements only.
+#
+# This file is the source of truth. requirements.txt is GENERATED from it and
+# must not be edited by hand:
+#
+#     pip-compile requirements.in
+#
+# See DEPENDENCIES.md for the full regeneration and audit procedure.
+
+fastapi
+uvicorn
+
+# Database and migrations
+sqlalchemy
+alembic
+psycopg2-binary
+
+# Configuration
+python-dotenv
+pydantic-settings
+pydantic[email]
+
+# Authentication and password hashing.
+# bcrypt is pinned below 4.1 because passlib 1.7.x reads bcrypt.__about__,
+# which was removed in bcrypt 4.1 — leaving it unpinned breaks login.
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+
+# Paillier homomorphic encryption
+phe
