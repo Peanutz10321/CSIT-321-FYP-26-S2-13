@@ -13,7 +13,7 @@ from app.models.candidate import Candidate
 from app.models.ballot import Ballot
 from app.models.candidate_result import CandidateResult
 from app.schemas.election_schema import ElectionCreate, ElectionDraftCreate, ElectionResponse, ElectionUpdate, ExtendDeadlineRequest
-from app.security.audit import log_event
+from app.security.audit import audit_details, log_event
 from app.security.security import get_current_user, require_organizer
 from app.security.keystore import create_and_store_keypair, load_private_key
 from app.security.homomorphic import deserialize_public_key, homomorphic_tally
@@ -32,21 +32,27 @@ router = APIRouter(prefix="/elections", tags=["Elections"])
 
 
 def _eligibility_details(change: str, voter_id: UUID) -> str:
+    """Details for an eligibility_changed event.
+
+    Records only the administrative change type and the target voter's user UUID —
+    never an email, name, external id, or any ballot/secret material. Structured
+    JSON so the value cannot be made ambiguous by punctuation.
     """
-    Stable, minimal details string for an eligibility_changed audit event. Records
-    only the administrative change type and the target voter's user UUID — never an
-    email, name, external id, or any ballot/secret material.
-    """
-    return f"change={change};voter_id={voter_id}"
+    return audit_details(change=change, voter_id=str(voter_id))
 
 
 def _title_change_details(old_title: str | None, new_title: str | None) -> str:
     """Details for an election_title_changed event.
 
-    Election titles are organisational labels, not personal data, so recording
-    both sides of the change is safe and is what makes the event reviewable.
+    An election title is an organizer-authored, intended-public label for the
+    election, so recording both sides of a rename is what makes the event
+    reviewable. It is organizer-controlled free text, not a field the system
+    guarantees to be non-personal — the assumption is that a title is meant to be
+    seen, the same way it is shown to every eligible voter. JSON-encoded because a
+    title can contain the ``;`` and ``=`` a delimited string would treat as
+    separators.
     """
-    return f"old_title={old_title};new_title={new_title}"
+    return audit_details(old_title=old_title, new_title=new_title)
 
 
 def _validate_ballot_configuration(
@@ -122,7 +128,7 @@ def createElectionDraft(
         action="election_created",
         entity_type="election",
         entity_id=election.id,
-        details="status=draft",
+        details=audit_details(status="draft"),
     )
 
     db.commit()
@@ -202,7 +208,7 @@ def createElection(
         action="election_created",
         entity_type="election",
         entity_id=election.id,
-        details="status=active",
+        details=audit_details(status="active"),
     )
 
     create_and_store_keypair(db, election)
@@ -259,6 +265,20 @@ def createElection(
             entity_id=election.id,
             details=_eligibility_details("added", voter.id),
         )
+
+    # Direct creation finishes with an active election, exactly as the draft
+    # activation route does, so it records the same activation event. Placed after
+    # every activation prerequisite (key generation and eligibility) has succeeded
+    # but before the single shared commit, so a rollback in the loop above discards
+    # this along with the business records. key_generated is emitted once, above —
+    # not duplicated here.
+    log_event(
+        db,
+        actor_user_id=current_organizer.id,
+        action="election_activated",
+        entity_type="election",
+        entity_id=election.id,
+    )
 
     db.commit()
 
@@ -448,44 +468,62 @@ def updateElection(
 
     # Captured before any assignment so the title event can report both sides.
     old_title = election.title
+    # Only fields whose value actually differs from what is stored. A request that
+    # merely *mentions* a field at its current value is a no-op and records nothing.
     changed_fields = []
 
-    if payload.title is not None:
+    if payload.title is not None and payload.title != election.title:
         election.title = payload.title
         changed_fields.append("title")
 
-    if payload.description is not None:
+    if payload.description is not None and payload.description != election.description:
         election.description = payload.description
         changed_fields.append("description")
 
-    if payload.start_date is not None:
+    if payload.start_date is not None and payload.start_date != election.start_date:
         election.start_date = payload.start_date
         changed_fields.append("start_date")
 
-    if payload.end_date is not None:
+    if payload.end_date is not None and payload.end_date != election.end_date:
         election.end_date = payload.end_date
         changed_fields.append("end_date")
 
-    # Optional: replace candidate list if candidates are provided
+    # Replace the candidate list only when the resulting set actually differs, so
+    # re-submitting the same candidates is not recorded as a change.
     if payload.candidates is not None:
-        changed_fields.append("candidates")
         if len(payload.candidates) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one candidate is required",
             )
 
-        db.query(Candidate).filter(Candidate.election_id == election.id).delete()
+        existing = (
+            db.query(Candidate)
+            .filter(Candidate.election_id == election.id)
+            .order_by(Candidate.display_order)
+            .all()
+        )
+        existing_shape = [
+            (c.name, c.description, c.photo_url, c.display_order) for c in existing
+        ]
+        incoming_shape = [
+            (c.name, c.description, c.photo_url, c.display_order or index)
+            for index, c in enumerate(payload.candidates, start=1)
+        ]
 
-        for index, candidate_data in enumerate(payload.candidates, start=1):
-            candidate = Candidate(
-                election_id=election.id,
-                name=candidate_data.name,
-                description=candidate_data.description,
-                photo_url=candidate_data.photo_url,
-                display_order=candidate_data.display_order or index,
-            )
-            db.add(candidate)
+        if incoming_shape != existing_shape:
+            changed_fields.append("candidates")
+            db.query(Candidate).filter(Candidate.election_id == election.id).delete()
+
+            for index, candidate_data in enumerate(payload.candidates, start=1):
+                candidate = Candidate(
+                    election_id=election.id,
+                    name=candidate_data.name,
+                    description=candidate_data.description,
+                    photo_url=candidate_data.photo_url,
+                    display_order=candidate_data.display_order or index,
+                )
+                db.add(candidate)
 
     # Validate the resulting ballot configuration (merging any provided fields with
     # what is already stored). Still a draft, so the candidate-count rule is deferred
@@ -498,28 +536,31 @@ def updateElection(
     )
     _validate_ballot_configuration(effective_ballot_type, effective_max_selections)
 
-    if payload.ballot_type is not None:
+    if payload.ballot_type is not None and payload.ballot_type != election.ballot_type:
         election.ballot_type = payload.ballot_type
         changed_fields.append("ballot_type")
 
-    if payload.max_selections is not None:
+    if payload.max_selections is not None and payload.max_selections != election.max_selections:
         election.max_selections = payload.max_selections
         changed_fields.append("max_selections")
 
-    log_event(
-        db,
-        actor_user_id=current_organizer.id,
-        action="election_updated",
-        entity_type="election",
-        entity_id=election.id,
-        # Field names only — never the submitted values, which would put
-        # candidate names into the audit trail.
-        details=f"status=draft;fields={','.join(changed_fields) or 'none'}",
-    )
+    # No genuine change means no event — an audit trail full of empty "updated"
+    # rows hides the real ones.
+    if changed_fields:
+        log_event(
+            db,
+            actor_user_id=current_organizer.id,
+            action="election_updated",
+            entity_type="election",
+            entity_id=election.id,
+            # Field names only — never the submitted values, which would put
+            # candidate names into the audit trail.
+            details=audit_details(status="draft", fields=changed_fields),
+        )
 
     # A separate event because a rename is worth finding on its own, and it is
     # the one field where both old and new values are safe to keep.
-    if payload.title is not None and payload.title != old_title:
+    if "title" in changed_fields:
         log_event(
             db,
             actor_user_id=current_organizer.id,
@@ -578,7 +619,7 @@ def deleteElection(
         action="election_deleted",
         entity_type="election",
         entity_id=election.id,
-        details="status=draft",
+        details=audit_details(status="draft"),
     )
 
     db.delete(election)
@@ -638,7 +679,10 @@ def extendElectionDeadline(
             action="election_deadline_extended",
             entity_type="election",
             entity_id=election.id,
-            details=f"old_end_date={old_end_date};new_end_date={election.end_date}",
+            details=audit_details(
+                old_end_date=old_end_date.isoformat() if old_end_date else None,
+                new_end_date=election.end_date.isoformat(),
+            ),
         )
 
     # This endpoint can rename an active election, so the same title event is
@@ -903,7 +947,7 @@ def _tally_and_complete(
 
     election.status = ElectionStatus.completed
 
-    details = f"reason={close_reason}" if close_reason else None
+    details = audit_details(reason=close_reason) if close_reason else None
 
     log_event(
         db,

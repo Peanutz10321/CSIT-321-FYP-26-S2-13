@@ -210,14 +210,17 @@ def submitVote(
     db.add(ballot)
     try:
         db.flush()  # assigns ballot.id; raises IntegrityError on double-vote
-        # Audit the act of voting only — never the choice
+        # Recorded at ELECTION level, never ballot level. If entity_id were the
+        # ballot id, audit_logs ⨝ ballots would restore the voter→ballot link this
+        # system is meant not to keep (see ADDENDUM_unlinkability_and_turnout, A.7).
+        # The event says "this voter cast a vote in this election" and nothing that
+        # points at which ballot — no ballot id, no receipt code, no choice.
         log_event(
             db,
             actor_user_id=current_voter.id,
             action="vote_cast",
-            entity_type="ballot",
-            entity_id=ballot.id,
-            details=f"election={payload.election_id}",
+            entity_type="election",
+            entity_id=payload.election_id,
         )
         db.commit()
     except IntegrityError:

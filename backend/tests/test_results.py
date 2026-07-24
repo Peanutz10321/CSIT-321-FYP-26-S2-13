@@ -676,9 +676,21 @@ class TestCloseElection:
             assert "results_published" in actions
 
             candidate_ids = {candidate["id"] for candidate in election["candidates"]}
-            for row in rows:
+
+            # The close/publish events are the organizer's. vote_cast rows now also
+            # hang off the election (entity_id = election.id, actor = voter), so the
+            # actor check is scoped to the events this test is actually about.
+            close_publish_rows = [
+                row
+                for row in rows
+                if row.action in ("election_closed", "results_published")
+            ]
+            assert close_publish_rows
+            for row in close_publish_rows:
                 assert row.actor_user_id == UUID(organizer_user["id"])
-                # The audit trail records THAT results were published, never a choice.
+
+            # No audit row for this election — of any action — may carry a choice.
+            for row in rows:
                 for candidate_id in candidate_ids:
                     assert candidate_id not in (row.details or "")
         finally:
@@ -960,10 +972,22 @@ class TestMultiSelectAbstentionResults:
 
         db = SessionLocal()
         try:
-            rows = db.query(AuditLog).filter(AuditLog.action == "vote_cast").all()
-            election_rows = [r for r in rows if f"election={election['id']}" in (r.details or "")]
+            # vote_cast is recorded at election level now (entity_id = election.id),
+            # so the rows are found by entity, not by a details string.
+            election_rows = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.action == "vote_cast",
+                    AuditLog.entity_id == UUID(election["id"]),
+                )
+                .all()
+            )
             assert len(election_rows) == 2
             for row in election_rows:
+                # entity_id is the election, never the ballot; details carry no
+                # selection or abstention marker.
+                assert str(row.entity_id) == election["id"]
+                assert row.entity_type == "election"
                 details = row.details or ""
                 for cand in candidates:
                     assert cand["id"] not in details

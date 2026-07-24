@@ -13,7 +13,7 @@ from app.schemas.user_schema import (
     UserResponse,
     UserStatusUpdateRequest,
 )
-from app.security.audit import log_event
+from app.security.audit import audit_details, log_event
 from app.security.security import require_system_admin
 from app.services.user_service import build_user_account
 
@@ -21,13 +21,57 @@ from app.services.user_service import build_user_account
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
 
 
-def _status_change_details(old_status: UserStatus, new_status: UserStatus) -> str:
-    """Minimal details for an account status change.
+def _apply_status_change(
+    db: Session,
+    *,
+    actor_user_id: UUID,
+    user: User,
+    new_status: UserStatus,
+) -> bool:
+    """Apply a status change and audit it, sharing one classification across the
+    generic status, suspend and unsuspend routes.
 
-    Records the transition only. The target account is identified by the audit
-    row's entity_id, so no email, username, or external id is stored here.
+    Returns True if the status actually changed. A no-op (the account is already
+    in ``new_status``) makes no change and records no event — so re-suspending an
+    already-suspended user, or a generic ``/status`` to the current value, does
+    not litter the trail.
+
+    The event action reflects the real transition:
+
+      * into suspended      -> user_suspended
+      * out of suspended     -> user_unsuspended
+      * any other transition -> user_status_changed
+
+    so the generic ``/status`` route and the dedicated suspend/unsuspend routes
+    produce identical semantics for the same transition. The target account is
+    identified by the audit row's entity_id; details carry only the two statuses,
+    never an email, username, or external id.
     """
-    return f"old_status={old_status.value};new_status={new_status.value}"
+    old_status = user.status
+    if old_status == new_status:
+        return False
+
+    user.status = new_status
+
+    if new_status == UserStatus.suspended:
+        action = "user_suspended"
+    elif old_status == UserStatus.suspended:
+        action = "user_unsuspended"
+    else:
+        action = "user_status_changed"
+
+    log_event(
+        db,
+        actor_user_id=actor_user_id,
+        action=action,
+        entity_type="user",
+        entity_id=user.id,
+        details=audit_details(
+            old_status=old_status.value,
+            new_status=new_status.value,
+        ),
+    )
+    return True
 
 
 @router.post(
@@ -82,7 +126,7 @@ def createOrganizer(
             action="organizer_created",
             entity_type="user",
             entity_id=organizer.id,
-            details="role=organizer",
+            details=audit_details(role="organizer"),
         )
         db.commit()
     except IntegrityError:
@@ -193,16 +237,14 @@ def updateUserStatus(
             detail="You cannot change your own status",
         )
 
-    old_status = user.status
-    user.status = UserStatus(body.status)
-
-    log_event(
+    # Same transition helper the suspend/unsuspend routes use, so a generic
+    # /status to "suspended" is audited as user_suspended, and a no-op records
+    # nothing.
+    _apply_status_change(
         db,
         actor_user_id=current_admin.id,
-        action="user_status_changed",
-        entity_type="user",
-        entity_id=user.id,
-        details=_status_change_details(old_status, user.status),
+        user=user,
+        new_status=UserStatus(body.status),
     )
 
     db.commit()
@@ -235,16 +277,11 @@ def suspendUser(
             detail="You cannot change your own status",
         )
 
-    old_status = user.status
-    user.status = UserStatus.suspended
-
-    log_event(
+    _apply_status_change(
         db,
         actor_user_id=current_admin.id,
-        action="user_suspended",
-        entity_type="user",
-        entity_id=user.id,
-        details=_status_change_details(old_status, user.status),
+        user=user,
+        new_status=UserStatus.suspended,
     )
 
     db.commit()
@@ -277,16 +314,11 @@ def unsuspendUser(
             detail="You cannot change your own status",
         )
 
-    old_status = user.status
-    user.status = UserStatus.active
-
-    log_event(
+    _apply_status_change(
         db,
         actor_user_id=current_admin.id,
-        action="user_unsuspended",
-        entity_type="user",
-        entity_id=user.id,
-        details=_status_change_details(old_status, user.status),
+        user=user,
+        new_status=UserStatus.active,
     )
 
     db.commit()

@@ -159,7 +159,7 @@ def test_destructive_reset_is_audited(seeded_engine):
     assert len(row) == 1, "the destructive reset must be audited exactly once"
     assert row[0].sequence_number == 1
     assert row[0].entity_type == "database"
-    assert row[0].details == "scope=all_application_tables"
+    assert row[0].details == '{"scope":"all_application_tables"}'
 
 
 def test_seeded_audit_chain_verifies(seeded_engine):

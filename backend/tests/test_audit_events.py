@@ -6,11 +6,11 @@ auditor would actually find afterwards: the event exists, it names the right
 entity, it records safe old/new values, and it never carries an email, a
 candidate name, or any ballot material.
 
-The chain test at the bottom checks the segment these workflows produce rather
-than the whole table: the suite's clean_test_records fixture deletes audit rows
-between tests, so a whole-table verification here would fail on gaps that the
-harness created, not the code. Whole-chain verification is covered against an
-isolated database in tests/test_audit_chain.py.
+The chain test at the bottom checks the complete trail these workflows produce.
+The SQLite test database is disposable, so ``clean_test_records`` resets both
+``audit_logs`` and ``audit_chain_head`` together between tests. Every test starts
+from genesis, allowing route-driven verification from the first row through the
+current head without harness-created gaps.
 """
 
 from datetime import datetime, timedelta
@@ -23,7 +23,7 @@ from sqlalchemy import func
 from app.database import SessionLocal
 from app.main import app
 from app.models.audit_log import AuditLog
-from app.security.audit import compute_entry_hash
+from app.security.audit import audit_details, compute_entry_hash, verify_audit_chain
 from tests.factories import create_system_admin, provision_from_payload
 
 
@@ -205,7 +205,7 @@ class TestAdminUserEvents:
 
         row = one_row("organizer_created", organizer["id"])
         assert row["entity_type"] == "user"
-        assert row["details"] == "role=organizer"
+        assert row["details"] == '{"role":"organizer"}'
 
     def test_organizer_creation_audit_holds_no_credentials(self, admin_token):
         suffix = uuid4().hex[:8]
@@ -241,7 +241,7 @@ class TestAdminUserEvents:
 
         row = one_row("user_status_changed", voter["id"])
         assert row["entity_type"] == "user"
-        assert row["details"] == "old_status=active;new_status=inactive"
+        assert row["details"] == '{"new_status":"inactive","old_status":"active"}'
 
     def test_suspend_is_audited(self, admin_token):
         voter = register_voter()
@@ -252,7 +252,7 @@ class TestAdminUserEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("user_suspended", voter["id"])
-        assert row["details"] == "old_status=active;new_status=suspended"
+        assert row["details"] == '{"new_status":"suspended","old_status":"active"}'
 
     def test_unsuspend_is_audited(self, admin_token):
         voter = register_voter()
@@ -264,7 +264,7 @@ class TestAdminUserEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("user_unsuspended", voter["id"])
-        assert row["details"] == "old_status=suspended;new_status=active"
+        assert row["details"] == '{"new_status":"active","old_status":"suspended"}'
 
     def test_a_rejected_status_change_leaves_no_event(self, admin_token):
         """An admin cannot suspend themselves, and the refusal is not an event."""
@@ -300,7 +300,7 @@ class TestElectionLifecycleEvents:
 
         row = one_row("election_created", election["id"])
         assert row["entity_type"] == "election"
-        assert row["details"] == "status=draft"
+        assert row["details"] == '{"status":"draft"}'
 
     def test_active_creation_is_audited_without_duplicating_key_generation(
         self, organizer_token
@@ -309,7 +309,7 @@ class TestElectionLifecycleEvents:
         election = create_active(organizer_token, voter)
 
         row = one_row("election_created", election["id"])
-        assert row["details"] == "status=active"
+        assert row["details"] == '{"status":"active"}'
 
         # The pre-existing events must still fire exactly once each.
         assert len(audit_rows("key_generated", election["id"])) == 1
@@ -326,7 +326,7 @@ class TestElectionLifecycleEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("election_updated", election["id"])
-        assert row["details"] == "status=draft;fields=description"
+        assert row["details"] == '{"fields":["description"],"status":"draft"}'
 
     def test_draft_update_does_not_record_candidate_names(self, organizer_token):
         election = create_draft(organizer_token)
@@ -355,7 +355,7 @@ class TestElectionLifecycleEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("election_title_changed", election["id"])
-        assert row["details"] == f"old_title={election['title']};new_title={new_title}"
+        assert row["details"] == audit_details(old_title=election["title"], new_title=new_title)
 
     def test_an_unchanged_title_emits_no_title_event(self, organizer_token):
         election = create_draft(organizer_token)
@@ -382,8 +382,8 @@ class TestElectionLifecycleEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("election_deadline_extended", election["id"])
-        assert row["details"].startswith("old_end_date=")
-        assert "new_end_date=" in row["details"]
+        assert '"old_end_date"' in row["details"]
+        assert '"new_end_date"' in row["details"]
 
     def test_renaming_through_extend_deadline_emits_a_title_event(self, organizer_token):
         voter = register_voter()
@@ -399,7 +399,7 @@ class TestElectionLifecycleEvents:
         assert response.status_code == 200, response.text
 
         row = one_row("election_title_changed", election["id"])
-        assert row["details"] == f"old_title={election['title']};new_title={new_title}"
+        assert row["details"] == audit_details(old_title=election["title"], new_title=new_title)
 
     def test_draft_deletion_is_audited_and_the_event_outlives_the_election(
         self, organizer_token
@@ -413,7 +413,7 @@ class TestElectionLifecycleEvents:
 
         # The election is gone; the audit row that records its deletion is not.
         row = one_row("election_deleted", election["id"])
-        assert row["details"] == "status=draft"
+        assert row["details"] == '{"status":"draft"}'
 
         detail_response = client.get(
             f"{ELECTION_BASE}/{election['id']}", headers=auth_header(organizer_token)
@@ -426,13 +426,21 @@ class TestElectionLifecycleEvents:
 # ---------------------------------------------------------------------------
 
 
-def test_workflow_events_form_an_intact_chain_segment(organizer_token, admin_token):
-    """Everything these workflows append must still hash and link correctly.
+def test_route_driven_chain_verifies_from_genesis_to_head(organizer_token, admin_token):
+    """The whole route-driven chain must verify, not merely a slice of it.
 
-    Scoped to the entries this test produces, because the suite's cleanup fixture
-    deletes rows between tests and would otherwise show as chain gaps.
+    The cleanup fixture now resets audit_logs and the chain head together, so each
+    test starts from an intact chain at genesis. That lets this assert the real
+    property — verify_audit_chain over the entire table passes — rather than the
+    old segment-only check that stepped around a broken harness.
     """
-    baseline = max_sequence()
+    db = SessionLocal()
+    try:
+        # Precondition: the reset really did leave a clean chain to build on.
+        assert verify_audit_chain(db).ok
+        assert db.query(AuditLog).count() == 0
+    finally:
+        db.close()
 
     voter = register_voter()
     election = create_active(organizer_token, voter)
@@ -447,25 +455,213 @@ def test_workflow_events_form_an_intact_chain_segment(organizer_token, admin_tok
     )
     client.patch(f"{ADMIN_BASE}/{voter['id']}/suspend", headers=auth_header(admin_token))
 
-    segment = rows_after(baseline)
-    assert len(segment) >= 5, [row["action"] for row in segment]
+    db = SessionLocal()
+    try:
+        result = verify_audit_chain(db)
+        assert result.ok, [problem.message for problem in result.problems]
+        rows = db.query(AuditLog).order_by(AuditLog.sequence_number).all()
+        assert result.checked == len(rows) >= 5
+        assert [row.sequence_number for row in rows] == list(range(1, len(rows) + 1))
+    finally:
+        db.close()
 
-    # Contiguous positions.
-    positions = [row["sequence_number"] for row in segment]
-    assert positions == list(range(positions[0], positions[0] + len(positions)))
 
-    for index, row in enumerate(segment):
-        recomputed = compute_entry_hash(
-            sequence_number=row["sequence_number"],
-            previous_hash=row["previous_hash"],
-            actor_user_id=row["actor_user_id"],
-            action=row["action"],
-            entity_type=row["entity_type"],
-            entity_id=row["entity_id"],
-            details=row["details"],
-            created_at=row["created_at"],
+# ---------------------------------------------------------------------------
+# Election activation (issue B) — both paths emit election_activated once
+# ---------------------------------------------------------------------------
+
+
+class TestActivationEvents:
+    def test_direct_active_creation_emits_election_activated_once(self, organizer_token):
+        voter = register_voter()
+        election = create_active(organizer_token, voter)
+
+        assert len(audit_rows("election_activated", election["id"])) == 1
+        # key_generated fires exactly once — activation does not bring a second.
+        assert len(audit_rows("key_generated", election["id"])) == 1
+
+    def test_draft_activation_emits_election_activated_once(self, organizer_token):
+        voter = register_voter()
+        election = create_draft(organizer_token)
+        client.post(
+            f"{ELECTION_BASE}/{election['id']}/voters",
+            json={"external_id": voter["external_id"]},
+            headers=auth_header(organizer_token),
         )
-        assert recomputed == row["entry_hash"], f"entry {row['sequence_number']} does not hash"
+        response = client.patch(
+            f"{ELECTION_BASE}/{election['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
 
-        if index > 0:
-            assert row["previous_hash"] == segment[index - 1]["entry_hash"]
+        assert len(audit_rows("election_activated", election["id"])) == 1
+        assert len(audit_rows("key_generated", election["id"])) == 1
+
+    def test_direct_active_creation_orders_created_before_activated(self, organizer_token):
+        voter = register_voter()
+        election = create_active(organizer_token, voter)
+
+        actions = [row["action"] for row in audit_rows(entity_id=election["id"])]
+
+        assert actions.index("election_created") < actions.index("key_generated")
+        assert actions.index("key_generated") < actions.index("election_activated")
+        assert actions[-1] == "election_activated"
+
+
+# ---------------------------------------------------------------------------
+# No-op and consistency (issue C)
+# ---------------------------------------------------------------------------
+
+
+class TestNoOpStatusEvents:
+    def test_resuspending_a_suspended_user_records_nothing(self, admin_token):
+        voter = register_voter()
+        client.patch(f"{ADMIN_BASE}/{voter['id']}/suspend", headers=auth_header(admin_token))
+
+        before = len(audit_rows(entity_id=voter["id"]))
+        response = client.patch(
+            f"{ADMIN_BASE}/{voter['id']}/suspend", headers=auth_header(admin_token)
+        )
+        assert response.status_code == 200, response.text
+
+        assert len(audit_rows(entity_id=voter["id"])) == before
+
+    def test_unsuspending_an_active_user_records_nothing(self, admin_token):
+        voter = register_voter()  # already active
+
+        response = client.patch(
+            f"{ADMIN_BASE}/{voter['id']}/unsuspend", headers=auth_header(admin_token)
+        )
+        assert response.status_code == 200, response.text
+
+        assert audit_rows("user_unsuspended", voter["id"]) == []
+
+    def test_generic_status_to_current_value_records_nothing(self, admin_token):
+        voter = register_voter()  # active
+
+        response = client.patch(
+            f"{ADMIN_BASE}/{voter['id']}/status",
+            json={"status": "active"},
+            headers=auth_header(admin_token),
+        )
+        assert response.status_code == 200, response.text
+
+        assert audit_rows(entity_id=voter["id"]) == []
+
+    def test_generic_status_to_suspended_is_classified_as_suspension(self, admin_token):
+        """The generic route and the dedicated suspend route agree on semantics."""
+        voter = register_voter()
+
+        response = client.patch(
+            f"{ADMIN_BASE}/{voter['id']}/status",
+            json={"status": "suspended"},
+            headers=auth_header(admin_token),
+        )
+        assert response.status_code == 200, response.text
+
+        assert len(audit_rows("user_suspended", voter["id"])) == 1
+        assert audit_rows("user_status_changed", voter["id"]) == []
+
+    def test_generic_status_out_of_suspended_is_classified_as_unsuspension(self, admin_token):
+        voter = register_voter()
+        client.patch(f"{ADMIN_BASE}/{voter['id']}/suspend", headers=auth_header(admin_token))
+
+        response = client.patch(
+            f"{ADMIN_BASE}/{voter['id']}/status",
+            json={"status": "active"},
+            headers=auth_header(admin_token),
+        )
+        assert response.status_code == 200, response.text
+
+        assert len(audit_rows("user_unsuspended", voter["id"])) == 1
+
+
+class TestNoOpElectionUpdate:
+    def test_update_with_no_changes_records_nothing(self, organizer_token):
+        election = create_draft(organizer_token)
+
+        response = client.put(
+            f"{ELECTION_BASE}/{election['id']}",
+            json={"title": election["title"], "description": election["description"]},
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
+
+        assert audit_rows("election_updated", election["id"]) == []
+        assert audit_rows("election_title_changed", election["id"]) == []
+
+    def test_update_records_only_the_genuinely_changed_fields(self, organizer_token):
+        election = create_draft(organizer_token)
+
+        response = client.put(
+            f"{ELECTION_BASE}/{election['id']}",
+            # title resubmitted unchanged; only description differs.
+            json={"title": election["title"], "description": "A new description"},
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
+
+        row = one_row("election_updated", election["id"])
+        assert row["details"] == '{"fields":["description"],"status":"draft"}'
+        assert audit_rows("election_title_changed", election["id"]) == []
+
+
+# ---------------------------------------------------------------------------
+# Structured details survive punctuation (issue D)
+# ---------------------------------------------------------------------------
+
+
+class TestDetailEncoding:
+    def test_title_with_delimiters_stays_valid_json(self, organizer_token):
+        """A title full of ; = " and newlines must not corrupt the details."""
+        import json
+
+        election = create_draft(organizer_token)
+        nasty = 'a;b=c"d\n{}[]' + unique_text("")
+
+        response = client.put(
+            f"{ELECTION_BASE}/{election['id']}",
+            json={"title": nasty},
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 200, response.text
+
+        row = one_row("election_title_changed", election["id"])
+        parsed = json.loads(row["details"])  # must not raise
+        assert parsed["new_title"] == nasty
+        assert parsed["old_title"] == election["title"]
+
+
+# ---------------------------------------------------------------------------
+# Vote unlinkability (issue E)
+# ---------------------------------------------------------------------------
+
+
+class TestVoteAuditUnlinkability:
+    def test_vote_cast_is_recorded_at_election_level(self, organizer_token):
+        voter = register_voter()
+        election = create_active(organizer_token, voter)
+        token = login(voter["email"])
+
+        response = client.post(
+            "/votes/",
+            json={
+                "election_id": election["id"],
+                "candidate_id": election["candidates"][0]["id"],
+            },
+            headers=auth_header(token),
+        )
+        assert response.status_code == 201, response.text
+        ballot_id = response.json()["id"]
+        receipt_code = response.json()["receipt_code"]
+
+        row = one_row("vote_cast", election["id"])
+        assert row["entity_type"] == "election"
+        assert str(row["entity_id"]) == str(election["id"])
+
+        # The whole point: no vote_cast audit row may carry the ballot id, or
+        # audit_logs ⨝ ballots would restore the voter→ballot link.
+        for vote_row in audit_rows("vote_cast"):
+            assert str(vote_row["entity_id"]) != str(ballot_id)
+            assert ballot_id not in (vote_row["details"] or "")
+            assert receipt_code not in (vote_row["details"] or "")

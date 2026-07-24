@@ -38,7 +38,7 @@ from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
-from app.security.audit import CHAIN_ID, GENESIS_HASH, log_event
+from app.security.audit import CHAIN_ID, GENESIS_HASH, audit_details, log_event
 from app.security.password import hash_password
 from app.security.homomorphic import (
     deserialize_public_key,
@@ -350,7 +350,7 @@ def main(argv=None):
                 actor_user_id=admin.id,
                 action="demo_reset_executed",
                 entity_type="database",
-                details="scope=all_application_tables",
+                details=audit_details(scope="all_application_tables"),
             )
 
         organizer = create_user(
