@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from fastapi import Depends
 
+from app.config import settings
 from app.database import get_db
 
 import app.models.user
@@ -38,10 +39,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Homomorphic E-Voting API", lifespan=lifespan)
 
+# Origins come from CORS_ALLOWED_ORIGINS and are validated at startup: a wildcard
+# is refused when ENVIRONMENT=production, and an unset value means no cross-origin
+# access rather than an implicit wildcard. allow_credentials is turned off for a
+# wildcard because browsers reject that combination outright.
+# See app/config.py and DEPENDENCIES.md.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
