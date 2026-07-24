@@ -317,7 +317,11 @@ class TestAuditLog:
                 .first()
             )
             assert row is not None
-            assert row.entity_type == "ballot"
+            # Recorded at election level, not ballot level: entity_id must be the
+            # election so audit_logs never joins a voter to a ballot (see
+            # ADDENDUM_unlinkability_and_turnout, A.7).
+            assert row.entity_type == "election"
+            assert str(row.entity_id) == election["id"]
             # The audit trail records THAT a vote happened, never the choice
             for candidate in election["candidates"]:
                 assert candidate["id"] not in (row.details or "")

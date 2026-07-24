@@ -180,39 +180,105 @@ fork the chain.
 Check a database with `verify_audit_chain(db)` from `app.security.audit`. It
 reports modified, missing, reordered, broken-link and truncated entries.
 
-### Revoking UPDATE and DELETE
+### Restricting the application role
 
 The chain makes tampering *detectable*. Database permissions are what make it
 *hard*: the application only ever appends, so the role it connects as should not
 be able to update or delete audit rows at all.
+
+**Use a dedicated non-owner role.** This is not optional. A table's owner (and any
+superuser) implicitly holds every privilege, and `REVOKE` does not remove that —
+an owner can always `UPDATE`, `DELETE` and `TRUNCATE` regardless of what you
+revoke. Many hosted setups (Supabase included) hand you an owner/near-superuser
+role by default; pointing the backend at that role makes the audit restriction
+impossible. Create a separate role that owns nothing and connect the application
+as that role.
 
 Run this as an owner/superuser, substituting your own role name for
 `<app_role>` — the role in your `DATABASE_URL`, which differs per deployment, so
 it is deliberately not hardcoded here:
 
 ```sql
--- Replace <app_role> with the role the backend connects as.
-REVOKE UPDATE, DELETE, TRUNCATE ON TABLE audit_logs FROM <app_role>;
-GRANT  INSERT, SELECT              ON TABLE audit_logs TO   <app_role>;
+-- <app_role> must NOT own audit_logs / audit_chain_head and must NOT be a
+-- superuser, or the grants below are meaningless.
+
+-- Start from nothing, including any privilege inherited via PUBLIC, then grant
+-- back only what the append/read path needs.
+REVOKE ALL ON TABLE audit_logs        FROM <app_role>;
+REVOKE ALL ON TABLE audit_logs        FROM PUBLIC;
+GRANT  INSERT, SELECT ON TABLE audit_logs TO <app_role>;
 
 -- The head row is updated on every append, so UPDATE stays. It carries no
 -- history of its own; the entries it points at are the protected records.
-REVOKE DELETE, TRUNCATE ON TABLE audit_chain_head FROM <app_role>;
+REVOKE ALL ON TABLE audit_chain_head        FROM <app_role>;
+REVOKE ALL ON TABLE audit_chain_head        FROM PUBLIC;
 GRANT  INSERT, SELECT, UPDATE ON TABLE audit_chain_head TO <app_role>;
 ```
 
-Confirm the result:
+`REVOKE ... FROM PUBLIC` matters: a privilege granted to `PUBLIC` reaches every
+role, so a role can be able to `DELETE` even with nothing granted to it directly.
 
-```sql
-SELECT privilege_type
-FROM information_schema.role_table_grants
-WHERE table_name = 'audit_logs' AND grantee = '<app_role>';
--- expect only INSERT and SELECT
+**Verify effective privileges, not just direct grants.** Do not confirm with
+`information_schema.role_table_grants` — it lists only privileges granted
+*directly* to the role and misses inherited and `PUBLIC` grants, so a role can
+look restricted there yet still be able to delete. Use `has_table_privilege`,
+which reports the role's *effective* privilege:
+
+```bash
+# Run while connected AS the application role (or it checks the wrong user).
+python -m scripts.verify_audit_permissions
+# or against an explicit target:
+python -m scripts.verify_audit_permissions --db-url "$APP_ROLE_DATABASE_URL"
 ```
+
+The script is read-only (only `SELECT has_table_privilege(...)`; no GRANT/REVOKE),
+refuses non-PostgreSQL targets, warns if the role owns an audit table, and exits
+non-zero if the role can modify the trail. It checks:
+
+| Table | Allowed | Denied |
+|---|---|---|
+| `audit_logs` | INSERT, SELECT | UPDATE, DELETE, TRUNCATE |
+| `audit_chain_head` | SELECT, INSERT, UPDATE | DELETE, TRUNCATE |
 
 Note the demo seed's `--reset` truncates `audit_logs` and `audit_chain_head`, so
 it needs a role that still has TRUNCATE. Run it as an admin role against a demo
 database, never as the application role against a shared one.
+
+### Provisioning the runtime role fully
+
+This section only defines the **audit-table** restrictions. It is not, on its
+own, a working runtime role. A dedicated application role also needs, provisioned
+separately and according to what the application actually does:
+
+- `CONNECT` on the database and `USAGE` on schema `public` (and any other schema
+  the app uses) — without these it cannot connect or resolve tables at all.
+- **Least-privilege grants on every other application table** the endpoints
+  touch: typically `SELECT, INSERT, UPDATE` on `users`, `elections`,
+  `candidates`, `election_voters`, `ballots`, `candidate_results`,
+  `election_keys`, and `DELETE` only where a route genuinely deletes (e.g. draft
+  election deletion removes candidates/voters). Grant these deliberately from the
+  application's real operations; do **not** shortcut with `GRANT ALL`, which
+  would hand back the very UPDATE/DELETE on the audit tables this section
+  removes.
+- Sequence/`USAGE` grants only if the schema uses serial sequences (this schema
+  uses UUID/application-generated keys, so generally none are needed).
+
+Keep two distinct roles:
+
+- a **migration/owner role** that owns the schema and runs `alembic upgrade` and
+  the demo seed's destructive `--reset`; and
+- the **restricted runtime role** the deployed backend connects as.
+
+Migrations and the demo reset must **not** run through the restricted runtime
+role — it deliberately lacks the privileges they need (DDL, TRUNCATE), and
+running them as it would either fail or force you to over-grant it.
+
+Because a migration that recreates or replaces a table resets that table's
+privileges to its owner's defaults, **re-apply these grants and re-run the
+verifier after any such migration.** `verify_audit_permissions` checks only the
+two audit tables; it does **not** prove that every application endpoint works
+under the runtime role. Validate the full runtime role by exercising the app (or
+its test suite) against a database where that role is the connecting user.
 
 **What this does not do:** the database owner, a Supabase project administrator,
 and anyone able to run migrations can still rewrite rows and recompute the chain.

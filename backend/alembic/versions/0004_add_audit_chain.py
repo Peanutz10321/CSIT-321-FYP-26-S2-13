@@ -8,9 +8,13 @@ ordered by (created_at, id), numbered from 1, and linked together exactly the
 way the application links new entries. Without that, the first verification
 after deployment would report every historical row as broken.
 
-The hashing helper is imported from app.security.audit rather than copied. A
-copy would be frozen at today's format while verification kept using the
-application's, and the two would silently disagree about every backfilled row.
+The hashing helper is imported from the frozen ``app.security.audit_hash_v1``
+module, deliberately NOT from ``app.security.audit``. A migration must reproduce
+the exact bytes it backfilled forever, so it depends on the immutable v1 hashing
+contract directly rather than on the mutable application module (which pulls in
+ORM/runtime code and could change). The chain identifier is likewise defined
+locally here so this file has no dependency that could alter its output. See the
+warning in ``audit_hash_v1.py``: v1 never changes; a new format would be v2.
 
 Revision ID: 0004_audit_chain
 Revises: 0003_ballot_commitment
@@ -20,13 +24,17 @@ import sqlalchemy as sa
 from alembic import op
 
 from app.core.time import now_sgt
-from app.security.audit import CHAIN_ID, GENESIS_HASH, compute_entry_hash
+from app.security.audit_hash_v1 import GENESIS_HASH, compute_entry_hash
 
 
 revision = "0004_audit_chain"
 down_revision = "0003_ballot_commitment"
 branch_labels = None
 depends_on = None
+
+# Defined locally, not imported, so the migration's stored output can never be
+# changed by an edit elsewhere. Must match CHAIN_ID in app.security.audit.
+CHAIN_ID = "global"
 
 
 CHAIN_COLUMNS = ("sequence_number", "previous_hash", "entry_hash")

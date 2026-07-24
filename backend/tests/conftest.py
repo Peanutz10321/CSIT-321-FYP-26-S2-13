@@ -81,16 +81,31 @@ def pytest_configure(config):
 def clean_test_records():
     yield
 
-    from app.database import SessionLocal
+    from app.database import SessionLocal, engine
+
+    is_sqlite = engine.dialect.name == "sqlite"
 
     db = SessionLocal()
     try:
-        db.execute(text("""
-            DELETE FROM audit_logs
-            WHERE actor_user_id IN (
-                SELECT id FROM users WHERE email LIKE '%@test.com'
-            )
-        """))
+        if is_sqlite:
+            # The SQLite test database is disposable, so the audit trail and its
+            # chain head are reset together: the whole log is cleared and the head
+            # removed, leaving the next test an intact chain from genesis. A scoped
+            # delete that removed only some rows would leave the head pointing at a
+            # deleted entry, which is exactly the "truncated"/"missing" condition
+            # verify_audit_chain reports — a broken harness, not a broken chain.
+            db.execute(text("DELETE FROM audit_logs"))
+            db.execute(text("DELETE FROM audit_chain_head"))
+        else:
+            # Non-SQLite is never the target of this cleanup in the suite (the
+            # PostgreSQL tests manage their own databases). Keep the historical
+            # scoped delete for safety rather than wiping a server-side table.
+            db.execute(text("""
+                DELETE FROM audit_logs
+                WHERE actor_user_id IN (
+                    SELECT id FROM users WHERE email LIKE '%@test.com'
+                )
+            """))
 
         db.execute(text("""
             DELETE FROM candidate_results

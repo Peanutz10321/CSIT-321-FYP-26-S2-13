@@ -8,6 +8,7 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from app.database import get_db
 from app.main import app
+from app.models.audit_log import AuditChainHead, AuditLog
 from app.models.user import User, UserRole, UserStatus
 from app.security.password import hash_password
 
@@ -87,6 +88,11 @@ class FakeQuery:
     def order_by(self, *args):
         return self
 
+    def with_for_update(self, *args, **kwargs):
+        # Row locking has no meaning against an in-memory list; the audit chain
+        # helper still calls it, so it has to be accepted and ignored.
+        return self
+
     def _filtered_users(self):
         results = self.users
 
@@ -112,35 +118,71 @@ class FakeQuery:
 class FakeSession:
     def __init__(self):
         self.users = []
+        # Audited routes write through the same session, so the fake has to hold
+        # the chain as well. Tests can assert on audit_logs directly.
+        self.audit_logs = []
+        self.chain_heads = []
+        self.new = []
+
+    def _collection_for(self, entity):
+        if entity is AuditLog:
+            return self.audit_logs
+        if entity is AuditChainHead:
+            return self.chain_heads
+        return self.users
 
     def query(self, *entities):
         # query(User) yields entities; query(User.external_id) yields row tuples.
-        column = getattr(entities[0], "key", None) if entities else None
-        return FakeQuery(self.users, column=column)
+        entity = entities[0] if entities else None
+        column = getattr(entity, "key", None)
+        collection = self.users if column else self._collection_for(entity)
+        return FakeQuery(collection, column=column)
 
-    def add(self, user):
-        if not user.id:
-            user.id = uuid4()
+    def add(self, obj):
+        if isinstance(obj, (AuditLog, AuditChainHead)):
+            if getattr(obj, "id", None) is None:
+                obj.id = uuid4()
+            self._collection_for(type(obj)).append(obj)
+            self.new.append(obj)
+            return
+
+        if not obj.id:
+            obj.id = uuid4()
 
         now = datetime.now(timezone.utc)
 
-        if not user.created_at:
-            user.created_at = now
+        if not obj.created_at:
+            obj.created_at = now
 
-        user.updated_at = now
+        obj.updated_at = now
 
-        self.users.append(user)
+        self.users.append(obj)
+        self.new.append(obj)
+
+    def flush(self):
+        for obj in self.new:
+            if getattr(obj, "id", None) is None:
+                obj.id = uuid4()
+        self.new = []
 
     def commit(self):
         now = datetime.now(timezone.utc)
         for user in self.users:
             user.updated_at = now
+        self.new = []
+
+    def rollback(self):
+        self.new = []
 
     def refresh(self, user):
         return user
 
     def close(self):
         pass
+
+    def audit_actions(self):
+        """Every audit action recorded through this session, in order."""
+        return [entry.action for entry in self.audit_logs]
 
 
 @pytest.fixture()

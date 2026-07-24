@@ -37,9 +37,7 @@ Actions used so far:
 
 from __future__ import annotations
 
-import hashlib
 import json
-import uuid as uuid_module
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -49,80 +47,80 @@ from sqlalchemy.orm import Session
 from app.core.time import now_sgt
 from app.models.audit_log import AuditChainHead, AuditLog
 
+# Canonicalisation and hashing live in a frozen v1 module (see the warning
+# there). They are re-exported here so the application code and tests have one
+# stable import surface while the actual byte format can never drift. Migration
+# 0004 imports the frozen module directly, not this one.
+from app.security.audit_hash_v1 import (  # noqa: F401  (re-exported)
+    AUDIT_HASH_VERSION,
+    GENESIS_HASH,
+    _timestamp_text,
+    _uuid_text,
+    canonical_entry,
+    compute_entry_hash,
+)
+
 
 # The chain is global: one ordered sequence covering every audited event.
 CHAIN_ID = "global"
 
-# previous_hash of the first entry. A fixed non-null sentinel keeps the column
-# NOT NULL and makes the genesis entry explicit.
-GENESIS_HASH = "0" * 64
-
 
 # ---------------------------------------------------------------------------
-# Canonical serialisation and hashing
+# Structured details
 # ---------------------------------------------------------------------------
 
-
-def _uuid_text(value) -> str | None:
-    """Normalise a UUID-ish value to one canonical string form.
-
-    The same identifier can reach us as a ``UUID`` object (PostgreSQL) or as a
-    string with or without hyphens (SQLite, raw SQL). All of them must hash
-    identically, or verification would fail purely because of the driver.
-    """
-    if value is None:
-        return None
-
-    try:
-        return str(uuid_module.UUID(str(value)))
-    except (AttributeError, TypeError, ValueError):
-        return str(value)
-
-
-def _timestamp_text(value: datetime | None) -> str | None:
-    """Fixed-precision timestamp text, so the hash never depends on formatting."""
-    if value is None:
-        return None
-
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="microseconds")
-
-    return str(value)
-
-
-def canonical_entry(
-    *,
-    sequence_number: int,
-    previous_hash: str,
-    actor_user_id,
-    action: str,
-    entity_type: str,
-    entity_id=None,
-    details: str | None = None,
-    created_at: datetime | None = None,
-) -> str:
-    """Deterministic JSON for one entry — the exact bytes that get hashed.
-
-    Sorted keys and separators without whitespace mean the same entry always
-    serialises to the same string, on any platform and in any Python version.
-    """
-    payload = {
-        "sequence_number": int(sequence_number),
-        "previous_hash": previous_hash,
-        "actor_user_id": _uuid_text(actor_user_id),
-        "action": action,
-        "entity_type": entity_type,
-        "entity_id": _uuid_text(entity_id),
-        "details": details,
-        "created_at": _timestamp_text(created_at),
+# The only field NAMES an audit ``details`` value may carry. This is a guard on
+# structure, not on content: it stops a whole category being added by mistake (a
+# field literally named ``email`` or ``candidate_name`` raises), but it cannot vet
+# the *values* — those are the caller's responsibility. Keep it minimal, and add
+# a name here only for data that is safe to record. Never add a field for a
+# candidate selection, receipt code, password, secret, private key or ciphertext.
+_ALLOWED_DETAIL_FIELDS = frozenset(
+    {
+        "status",
+        "old_status",
+        "new_status",
+        "old_title",
+        "new_title",
+        "fields",
+        "change",
+        "voter_id",
+        "old_end_date",
+        "new_end_date",
+        "role",
+        "scope",
+        "reason",
     }
+)
 
+
+def audit_details(**fields) -> str:
+    """Build a deterministic JSON ``details`` string from allowlisted fields.
+
+    Prefer this over hand-built ``key=value;key=value`` strings: a user-controlled
+    value such as an election title can contain ``;``, ``=``, quotes or newlines,
+    which makes a delimited string ambiguous to parse and easy to spoof. JSON with
+    sorted keys and compact separators is unambiguous and stable.
+
+    Only names in ``_ALLOWED_DETAIL_FIELDS`` are accepted; anything else raises.
+    That is a guard on the *field name*, not the value: it stops an unapproved
+    category (say a field named ``email``) being added by accident, but it does
+    not and cannot guarantee the values are free of personal data. The caller is
+    responsible for passing only safe values — never a candidate selection,
+    receipt code, secret or ballot material. ``None`` values are dropped so an
+    absent field and an explicit null read the same.
+    """
+    unknown = set(fields) - _ALLOWED_DETAIL_FIELDS
+    if unknown:
+        raise ValueError(
+            f"audit_details received disallowed field(s): {', '.join(sorted(unknown))}"
+        )
+
+    payload = {key: value for key, value in fields.items() if value is not None}
+
+    # ensure_ascii=False keeps non-ASCII text readable; sorted keys and compact
+    # separators keep the output deterministic regardless of call order.
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-def compute_entry_hash(**fields) -> str:
-    """SHA-256 of an entry's canonical JSON, as lowercase hex."""
-    return hashlib.sha256(canonical_entry(**fields).encode("utf-8")).hexdigest()
 
 
 def _entry_hash_for_row(row: AuditLog) -> str:

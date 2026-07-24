@@ -38,7 +38,7 @@ from app.models.election import Election, ElectionStatus
 from app.models.candidate import Candidate
 from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.ballot import Ballot, BulletinStatus
-from app.security.audit import CHAIN_ID, GENESIS_HASH
+from app.security.audit import CHAIN_ID, GENESIS_HASH, audit_details, log_event
 from app.security.password import hash_password
 from app.security.homomorphic import (
     deserialize_public_key,
@@ -337,6 +337,21 @@ def main(argv=None):
             "admin@demo.com",
             demo_password,
         )
+
+        if args.reset:
+            # Deliberately logged here rather than at the truncation itself.
+            # reset_tables empties users, audit_logs and audit_chain_head, so an
+            # event written earlier would be erased by the very reset it records,
+            # and audit_logs.actor_user_id is NOT NULL with a foreign key to
+            # users. The admin above is the first row that can own it, which
+            # makes this entry 1 of the rebuilt chain.
+            log_event(
+                db,
+                actor_user_id=admin.id,
+                action="demo_reset_executed",
+                entity_type="database",
+                details=audit_details(scope="all_application_tables"),
+            )
 
         organizer = create_user(
             db,
