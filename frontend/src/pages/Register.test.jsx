@@ -32,25 +32,36 @@ function fillCredentials() {
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw123456' } })
 }
 
+function selectRole(name) {
+  fireEvent.change(screen.getByLabelText('Register as'), { target: { value: name } })
+}
+
 describe('Register role selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('offers no role picker at all', () => {
+  it('offers Voter and Organizer options', () => {
     renderRegister()
-    expect(screen.queryByLabelText('Profile')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Voter' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Organizer' })).toBeInTheDocument()
   })
 
-  it('does not offer an Organizer option', () => {
+  it('never offers a System Admin option', () => {
     renderRegister()
-    expect(screen.queryByRole('option', { name: 'Organizer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /system admin/i })).not.toBeInTheDocument()
   })
 
-  it('tells the user organizer accounts are provisioned by an admin', () => {
+  it('defaults to the voter role', () => {
     renderRegister()
-    expect(screen.getByText(/provisioned by a system administrator/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Register as')).toHaveValue('voter')
+  })
+
+  it('enforces and explains the backend password minimum', () => {
+    renderRegister()
+
+    expect(screen.getByLabelText('Password')).toHaveAttribute('minlength', '8')
+    expect(screen.getByText(/password must be at least 8 characters/i)).toBeInTheDocument()
   })
 })
 
@@ -74,17 +85,33 @@ describe('Register submit flow', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/voter-dashboard'))
   })
 
-  it('always submits the voter role, never organizer', async () => {
-    decodeJwt.mockReturnValue({ role: 'voter' })
+  it('submits the organizer role and redirects to the organizer dashboard', async () => {
+    decodeJwt.mockReturnValue({ role: 'organizer' })
 
     renderRegister()
     fillCredentials()
+    selectRole('organizer')
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() =>
+      expect(registerUser).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'organizer' }),
+      ),
+    )
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/organizer-dashboard'))
+  })
+
+  it('submits the exact role the user selected', async () => {
+    decodeJwt.mockReturnValue({ role: 'organizer' })
+
+    renderRegister()
+    fillCredentials()
+    selectRole('organizer')
     fireEvent.click(screen.getByRole('button', { name: 'Register' }))
 
     await waitFor(() => expect(registerUser).toHaveBeenCalled())
 
     const payload = registerUser.mock.calls[0][0]
-    expect(payload.role).toBe('voter')
-    expect(payload.role).not.toBe('organizer')
+    expect(payload.role).toBe('organizer')
   })
 })

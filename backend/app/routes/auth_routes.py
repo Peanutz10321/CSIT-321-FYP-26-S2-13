@@ -9,19 +9,25 @@ from app.schemas.user_schema import UserResponse
 from email_validator import validate_email, EmailNotValidError
 from app.security.password import verify_password
 from app.security.jwt import create_access_token
+from app.security.audit import audit_details, log_event
 from app.services.user_service import build_user_account
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
+# Roles a member of the public may self-assign at registration. System admin is
+# never in this set: those accounts are provisioned out of band.
+PUBLIC_REGISTRATION_ROLES = {UserRole.voter.value, UserRole.organizer.value}
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     """
-    Public registration. Creates voter accounts only.
+    Public registration. Creates voter or organizer accounts.
 
-    Organizer and system admin are trusted roles and must never be
-    self-assigned: organizers create elections and trigger tallies. Organizers
-    are provisioned by a system admin via POST /admin/users/organizers.
+    System admin remains a trusted role that can never be self-assigned and is
+    rejected with 403. A self-registered organizer is recorded with an
+    ``organizer_created`` audit event, committed atomically with the account.
     """
 
     if not request.username or not request.username.strip() \
@@ -40,29 +46,22 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
             detail="Missing field detected. Please key in again.",
         )
 
-    # Admin cannot register from public route
+    # System admin can never be registered from the public route.
     if request.role == UserRole.system_admin.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="System admin accounts cannot be registered publicly",
         )
 
-    # Organizer is a trusted role and cannot be self-assigned.
-    if request.role == UserRole.organizer.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Organizer accounts cannot be registered publicly. "
-                "Contact a system administrator."
-            ),
-        )
-
-    # Public registration creates voters only.
-    if request.role != UserRole.voter.value:
+    # Only voter and organizer may be self-assigned; anything else (including
+    # legacy role strings) is rejected.
+    if request.role not in PUBLIC_REGISTRATION_ROLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be voter",
+            detail="Role must be voter or organizer",
         )
+
+    role = UserRole(request.role)
 
     # Check duplicate email
     existing_email = db.query(User).filter(User.email == request.email).first()
@@ -81,7 +80,7 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
 
     new_user = build_user_account(
         db,
-        role=UserRole.voter,
+        role=role,
         username=request.username,
         email=request.email,
         password=request.password,
@@ -90,6 +89,20 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     db.add(new_user)
 
     try:
+        if role == UserRole.organizer:
+            # Flush first so the new id exists for the audit row; it raises the
+            # same IntegrityError the commit would, so the duplicate path below
+            # is unchanged. The organizer is the actor of their own creation
+            # event, and details carry only the role — never any credentials.
+            db.flush()
+            log_event(
+                db,
+                actor_user_id=new_user.id,
+                action="organizer_created",
+                entity_type="user",
+                entity_id=new_user.id,
+                details=audit_details(role="organizer"),
+            )
         db.commit()
     except IntegrityError:
         db.rollback()

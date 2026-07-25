@@ -1,13 +1,15 @@
 """
 Shared account provisioning for tests.
 
-Public registration creates voters only (see PR 2 / the remediation plan), so
-tests that merely *need* an organizer to exist can no longer POST to
-/auth/register. They provision one directly instead.
+Public registration now creates voters and organizers, but system admins are
+never publicly registrable, and many suites just *need* an account to exist
+without exercising the registration route or emitting its audit event. They
+provision directly here instead.
 
 Direct insertion is deliberate: these are fixtures, not assertions about the
-provisioning route. The admin-only provisioning endpoint itself is covered by
-tests/test_auth_user_admin_routes.py.
+registration route. Public organizer self-registration itself (and its
+organizer_created audit event) is covered by tests/test_auth_user_admin_routes.py
+and tests/test_audit_events.py.
 """
 
 from uuid import uuid4
@@ -62,7 +64,8 @@ def provision_from_payload(payload: dict, status: str = "active") -> dict:
     """Provision a non-voter account described by a test registration payload.
 
     Lets each module's register_user() helper keep its signature and call sites
-    while routing organizer/system_admin around the now voter-only public route.
+    while creating fixture accounts directly. Public organizer registration is
+    tested separately; system admins remain forbidden on the public route.
     """
     return create_user_directly(
         UserRole(payload["role"]),

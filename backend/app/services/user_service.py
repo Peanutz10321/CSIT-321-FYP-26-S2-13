@@ -1,9 +1,9 @@
 """
 Shared user-account provisioning.
 
-Public registration and admin-only organizer provisioning both create User rows.
-Keeping the external-id sequence and account construction here means the two
-paths cannot drift apart (e.g. produce different ORG-### numbering).
+Public registration creates both voter and organizer accounts through this one
+builder. Keeping the external-id sequence and account construction here means the
+role-specific numbering (VOTER-### and ORG-###) is produced in exactly one place.
 """
 
 import random

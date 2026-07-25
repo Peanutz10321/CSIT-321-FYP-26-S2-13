@@ -23,6 +23,7 @@ function Register() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState('voter')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,13 +33,13 @@ function Register() {
     setError('')
 
     try {
-      // Public registration creates voter accounts only. Organizer accounts are
-      // provisioned by a system admin.
+      // Public registration creates voter or organizer accounts. System admin is
+      // never an option here — those accounts are provisioned out of band.
       const payload = {
         username: username.trim(),
         email: email.trim(),
         password,
-        role: 'voter',
+        role,
       }
 
       await registerUser(payload)
@@ -85,7 +86,7 @@ function Register() {
             Create your account
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Register as a voter to take part in elections.
+            Register as a voter to take part in elections, or as an organizer to run them.
           </p>
         </div>
 
@@ -131,6 +132,21 @@ function Register() {
             </div>
 
             <div>
+              <label htmlFor="role" className={labelClass}>
+                Register as
+              </label>
+              <select
+                id="role"
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+                className={inputClass}
+              >
+                <option value="voter">Voter</option>
+                <option value="organizer">Organizer</option>
+              </select>
+            </div>
+
+            <div>
               <label htmlFor="password" className={labelClass}>
                 Password
               </label>
@@ -138,16 +154,20 @@ function Register() {
                 id="password"
                 type="password"
                 autoComplete="new-password"
+                minLength={8}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Create a password"
                 className={inputClass}
               />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Password must be at least 8 characters.
+              </p>
             </div>
 
             <p className="text-xs text-slate-500">
-              Registration creates a voter account. Organizer accounts are provisioned by a
-              system administrator.
+              Voters take part in elections; organizers create and run them. System
+              administrator accounts cannot be registered here.
             </p>
 
             <button type="submit" disabled={submitting} className={`${primaryButtonClass} mt-2`}>

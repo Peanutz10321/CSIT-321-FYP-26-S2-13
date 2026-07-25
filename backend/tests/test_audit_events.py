@@ -188,46 +188,48 @@ def create_active(organizer_token: str, voter: dict) -> dict:
 
 
 class TestAdminUserEvents:
-    def test_creating_an_organizer_is_audited(self, admin_token):
+    def test_public_organizer_registration_is_audited(self):
+        """The organizer_created event now fires on public self-registration."""
         suffix = uuid4().hex[:8]
         response = client.post(
-            f"{ADMIN_BASE}/organizers",
+            f"{AUTH_BASE}/register",
             json={
                 "username": f"new_org_{suffix}",
                 "email": f"new_org_{suffix}@test.com",
                 "password": "organizer-pass-123",
-                "full_name": "Provisioned Organizer",
+                "role": "organizer",
             },
-            headers=auth_header(admin_token),
         )
         assert response.status_code == 201, response.text
         organizer = response.json()
 
         row = one_row("organizer_created", organizer["id"])
         assert row["entity_type"] == "user"
+        # The new organizer is the actor of their own creation event.
+        assert str(row["actor_user_id"]) == organizer["id"]
         assert row["details"] == '{"role":"organizer"}'
 
-    def test_organizer_creation_audit_holds_no_credentials(self, admin_token):
+    def test_organizer_registration_audit_holds_no_credentials(self):
         suffix = uuid4().hex[:8]
         email = f"secret_org_{suffix}@test.com"
+        username = f"secret_org_{suffix}"
         password = "organizer-pass-123"
 
         response = client.post(
-            f"{ADMIN_BASE}/organizers",
+            f"{AUTH_BASE}/register",
             json={
-                "username": f"secret_org_{suffix}",
+                "username": username,
                 "email": email,
                 "password": password,
-                "full_name": "Provisioned Organizer",
+                "role": "organizer",
             },
-            headers=auth_header(admin_token),
         )
         assert response.status_code == 201, response.text
 
         details = one_row("organizer_created", response.json()["id"])["details"]
         assert email not in details
         assert password not in details
-        assert f"secret_org_{suffix}" not in details
+        assert username not in details
 
     def test_status_change_records_both_sides(self, admin_token):
         voter = register_voter()
