@@ -41,8 +41,8 @@ def register_user(role: str) -> dict:
         "password": "testing123",
     }
 
-    # Public registration creates voters only; organizers are provisioned by an
-    # admin, so tests that merely need one insert it directly.
+    # Non-voter accounts are inserted directly because this test needs a fixture,
+    # not another assertion of the public organizer-registration flow.
     if role != "voter":
         return {**payload, **provision_from_payload(payload)}
 

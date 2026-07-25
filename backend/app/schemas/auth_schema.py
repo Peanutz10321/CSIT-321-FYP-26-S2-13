@@ -1,10 +1,18 @@
-from pydantic import BaseModel, EmailStr
+from typing import Annotated
+
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     username: str | None = None
     email: str | None = None
-    password: str | None = None
+    # Public registration provisions voters and organizers, so the password rule
+    # must be at least as strong as the old admin-only organizer path (min 8).
+    # Kept optional so a genuinely absent password still yields the route's 400
+    # "missing field" message rather than a schema 422; a supplied value is
+    # length-checked. The role is deliberately a plain string, not a Literal, so
+    # the route can answer 403 for system_admin instead of a blanket 422.
+    password: Annotated[str, Field(min_length=8)] | None = None
     role: str = "voter"
 
 
