@@ -50,7 +50,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # Audits what actually ships, not the development environment.
+      #
+      # PYSEC-2026-1325 (CVE-2024-23342) is a Minerva timing attack in `ecdsa`, a
+      # transitive dependency of python-jose. Upstream has published NO fix and
+      # considers side-channel resistance out of scope. It is ignored here because
+      # this API signs JWTs with HS256 (HMAC) and contains no ECDSA code path, so
+      # the vulnerable signing/keygen/ECDH routines are never reached.
+      #
+      # This is ENFORCED, not assumed: JWT_ALGORITHM is typed Literal["HS256"] in
+      # app/config.py, so the app refuses to start with any ES*/RS* algorithm
+      # (pinned by tests/test_cors_config.py). If that pin is ever widened, remove
+      # this ignore because the vulnerable path would become reachable.
+      - name: Audit backend dependencies
+        run: |
+          pip-audit -r requirements.txt --strict \
+            --ignore-vuln PYSEC-2026-1325
 
       - name: Run tests
         env:
@@ -91,7 +108,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Reports against the committed lockfile. Nothing is auto-remediated here:
+      # `npm audit fix` can silently change resolved versions, so any finding is
+      # triaged and fixed deliberately in its own change. Runs through
+      # better-npm-audit so a single advisory can be suppressed with a written
+      # justification in .nsprc (see the react-router entry there) instead of
+      # lowering the level or ignoring the whole report.
+      - name: Audit frontend dependencies
+        run: npm run audit
+
+      - name: Lint
+        run: npm run lint
+
       - name: Build
+        # Production builds require an explicit API base URL; the value below is a
+        # placeholder that only proves the build succeeds when one is supplied.
+        env:
+          VITE_API_BASE_URL: https://api.ci.invalid
         run: npm run build
 
       - name: Run tests

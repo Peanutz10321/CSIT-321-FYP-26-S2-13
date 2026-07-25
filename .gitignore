@@ -1,6 +1,10 @@
 # Environment
 .env
 .env.*
+# Committed templates. These hold variable NAMES and placeholder values only —
+# never a real secret, connection string or deployment URL.
+!.env.example
+!.env.test.example
 venv/
 .venv/
 env/

@@ -1,0 +1,21 @@
+# Development, test and audit dependencies — direct requirements only.
+#
+# Generated into requirements-dev.txt:
+#
+#     pip-compile requirements-dev.in
+#
+# Kept separate from requirements.in so a deployment installs neither the test
+# suite nor the audit tooling, and so `pip-audit -r requirements.txt` reports on
+# what actually ships rather than on the development environment.
+
+# Production pins are constraints here, so the two files can never resolve the
+# same package to different versions in one environment.
+-c requirements.txt
+
+# Test suite
+pytest
+httpx
+
+# Dependency management and auditing
+pip-tools
+pip-audit
