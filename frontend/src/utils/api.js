@@ -157,7 +157,7 @@ async function extendElectionDeadline(electionId, newEndDate, title) {
 }
 
 async function submitVote(data) {
-  return request('/votes', {
+  return request('/votes/', {
     method: 'POST',
     data,
   })
@@ -184,7 +184,7 @@ async function createElectionDraft(data) {
 }
 
 async function createElection(data) {
-  return request('/elections', {
+  return request('/elections/', {
     method: 'POST',
     data,
   })
