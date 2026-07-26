@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-import { addElectionVoter, createElection, decodeJwt } from './api.js'
+import { BASE_URL, addElectionVoter, createElection, decodeJwt, submitVote } from './api.js'
 
 function mockFetchOnce(responseObj = {}) {
   globalThis.fetch = vi.fn().mockResolvedValue({
@@ -11,10 +11,14 @@ function mockFetchOnce(responseObj = {}) {
   })
 }
 
-function lastRequestBody() {
+function lastRequest() {
   const calls = globalThis.fetch.mock.calls
-  const [, options] = calls[calls.length - 1]
-  return JSON.parse(options.body)
+  const [url, options] = calls[calls.length - 1]
+  return { url, options }
+}
+
+function lastRequestBody() {
+  return JSON.parse(lastRequest().options.body)
 }
 
 describe('API payloads use the new e-voting terminology', () => {
@@ -44,6 +48,52 @@ describe('API payloads use the new e-voting terminology', () => {
     const body = lastRequestBody()
     expect(body.eligible_voter_external_ids).toEqual(['VOTER-001', 'VOTER-002'])
     expect(body).not.toHaveProperty('voter_institution_ids')
+  })
+})
+
+describe('core POST endpoints use the canonical backend paths', () => {
+  // The backend registers these two routes as `@router.post("/")` under a prefix,
+  // so the only paths it serves are `/votes/` and `/elections/`. Calling them
+  // without the trailing slash earns a 307 whose Location is built from the ASGI
+  // scheme — which is `http` behind a TLS-terminating proxy, so the browser blocks
+  // the redirect as mixed content and the request never lands. These assertions
+  // pin the exact URL, because a redirect that "works" in local HTTP would
+  // otherwise hide the break until deployment.
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('submitVote posts to /votes/ with the ballot payload', async () => {
+    mockFetchOnce({ id: 'ballot-1' })
+
+    const payload = {
+      election_id: 'election-1',
+      candidate_ids: ['candidate-1', 'candidate-2'],
+    }
+    await submitVote(payload)
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/votes/`)
+    expect(url).not.toMatch(/\/votes$/)
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body)).toEqual(payload)
+  })
+
+  it('createElection posts to /elections/ with the election payload', async () => {
+    mockFetchOnce({ id: 'e-1' })
+
+    const payload = {
+      title: 'Community Vote',
+      candidates: [{ name: 'Candidate A' }],
+      eligible_voter_external_ids: ['VOTER-001'],
+    }
+    await createElection(payload)
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/elections/`)
+    expect(url).not.toMatch(/\/elections$/)
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body)).toEqual(payload)
   })
 })
 
