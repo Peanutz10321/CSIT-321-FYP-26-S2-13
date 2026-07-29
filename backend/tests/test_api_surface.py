@@ -15,10 +15,15 @@ request would not distinguish "route removed" from "route present but the
 resource is missing".
 """
 
-from fastapi.routing import APIRoute
 import pytest
 
-from app.main import app
+# Imported as a module, deliberately. `from app.main import app` would pin this
+# file to whichever FastAPI instance existed when it was first imported, and
+# app.main is not a stable singleton across a test session: tests/test_cors_config.py
+# rebuilds it with importlib.reload to exercise CORS configurations, which rebinds
+# app.main.app to a new instance each time. Reading the attribute at call time
+# always inspects the app the application currently exposes.
+import app.main
 
 
 REMOVED_ROUTES = [
@@ -43,13 +48,44 @@ RETAINED_ROUTES = [
 
 
 def registered_routes() -> set[tuple[str, str]]:
-    """Every (method, path) pair the application currently serves."""
+    """Every (method, path) pair the application currently serves.
+
+    Read from the generated OpenAPI document rather than by walking app.routes.
+    Walking app.routes depends on a FastAPI internal that changed: up to 0.136
+    include_router copied each sub-route into app.routes, so filtering for
+    APIRoute found everything; from 0.139 it appends one internal
+    _IncludedRouter per call and leaves the sub-routes nested inside it, so the
+    same filter finds only the two routes declared with @app.get in main.py.
+    That silently turned every "route is absent" assertion here into a vacuous
+    pass on the pinned version.
+
+    The OpenAPI schema is stable across those versions and is also the better
+    definition of the thing under test: what the API advertises to clients.
+    """
+    schema = app.main.app.openapi()
+
     return {
-        (method, route.path)
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
     }
+
+
+def test_the_app_under_test_has_its_routers_mounted():
+    """Guard for every assertion below.
+
+    An "is not registered" assertion is vacuously true against an app whose
+    routers were never mounted, so a half-built app would report the removed
+    surface as gone while proving nothing. This fails first, and says so,
+    instead of leaving that to be inferred from a wall of assertion errors.
+    """
+    routes = registered_routes()
+
+    assert len(routes) > 10, (
+        f"only {len(routes)} route(s) registered: {sorted(routes)}. "
+        "app.main.app is missing its routers, so the absence assertions in "
+        "this file would pass without testing anything."
+    )
 
 
 @pytest.mark.parametrize(
