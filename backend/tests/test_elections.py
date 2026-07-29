@@ -392,40 +392,10 @@ class TestElectionStatusTransitions:
         assert response.status_code == 400
         assert "eligible voter" in response.json()["detail"].lower()
 
-    def test_organizer_can_complete_active_election(self, organizer_token, voter_user):
-        election = create_election_as_organizer(organizer_token)
-
-        add_response = client.post(
-            f"{ELECTION_BASE}/{election['id']}/voters",
-            json={"external_id": voter_user["external_id"]},
-            headers=auth_header(organizer_token),
-        )
-        assert add_response.status_code == 201, add_response.text
-
-        activate_response = client.patch(
-            f"{ELECTION_BASE}/{election['id']}/activate",
-            headers=auth_header(organizer_token),
-        )
-        assert activate_response.status_code == 200, activate_response.text
-
-        complete_response = client.patch(
-            f"{ELECTION_BASE}/{election['id']}/complete",
-            headers=auth_header(organizer_token),
-        )
-
-        assert complete_response.status_code == 200, complete_response.text
-        assert complete_response.json()["status"] == "completed"
-
-    def test_cannot_complete_draft_election(self, organizer_token):
-        election = create_election_as_organizer(organizer_token)
-
-        response = client.patch(
-            f"{ELECTION_BASE}/{election['id']}/complete",
-            headers=auth_header(organizer_token),
-        )
-
-        assert response.status_code == 400
-        assert "active" in response.json()["detail"].lower()
+    # An election is completed only by the deadline-driven finalize that runs when
+    # its results are requested; there is no manual /complete or /close transition
+    # to test here. That lifecycle transition is covered end to end by
+    # tests/test_results.py::TestAutoFinalizeExpiredElection.
 
 
 def _expire_election(election_id: str):

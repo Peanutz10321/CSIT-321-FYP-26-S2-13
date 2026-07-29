@@ -1,13 +1,21 @@
 """
-Vote/close race tests. PostgreSQL only.
+Vote/finalization race tests. PostgreSQL only.
 
 SQLite cannot exercise any of this: it has no row-level locking, and SQLAlchemy
 omits FOR SHARE / FOR UPDATE entirely on that dialect. These tests therefore run
 against a real PostgreSQL database with real concurrent sessions.
 
 The interleavings are made deterministic rather than raced: one session holds the
-close's exclusive lock open while another thread attempts to vote, and the test
-asserts the voter actually blocks. A timing-based race would pass by luck.
+exclusive election lock open while another thread attempts to vote, and the test
+asserts the voter actually blocks — confirmed through pg_stat_activity, not by
+elapsed time. A timing-based race would pass by luck.
+
+There is no manual close endpoint. Finalization happens through
+auto_finalize_if_expired, which acts only on an active election whose deadline
+has passed, so these tests expire the election before finalizing it. The locking
+protocol under test is unchanged: auto_finalize_if_expired takes the same
+exclusive lock (lock_election_for_close) that the removed endpoint used, and the
+vote path still takes its shared lock first.
 
 Setup command is in tests/test_migrations_postgres.py; these tests additionally
 need ALLOW_DESTRUCTIVE_DB_TESTS=true.
@@ -29,6 +37,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.core.time import now_sgt
+from app.models.audit_log import AuditLog
 from app.models.ballot import Ballot
 from app.models.candidate import Candidate
 from app.models.candidate_result import CandidateResult
@@ -38,7 +47,7 @@ from app.models.election_voter import ElectionVoter, EligibilityStatus
 from app.models.user import User, UserRole, UserStatus
 import app.routes.election_routes as election_routes_module
 import app.routes.vote_routes as vote_routes_module
-from app.routes.election_routes import _finalize_election_close, _tally_and_complete
+from app.routes.election_routes import auto_finalize_if_expired, _tally_and_complete
 from app.routes.vote_routes import submitVote
 from app.schemas.vote_schema import VoteCreate
 from app.security.homomorphic import (
@@ -210,16 +219,61 @@ def _vote(scenario, voter_index, candidate_index=0):
         db.close()
 
 
-def _close(scenario):
-    """Run the real close workflow in its own session. Returns (result, error)."""
+def _expire(scenario):
+    """Push the election's deadline into the past, leaving its status alone.
+
+    auto_finalize_if_expired acts only on an active election whose deadline has
+    passed, so this is the precondition for finalizing. It must run after any
+    votes are cast: the vote path rejects ballots outside the voting window.
+
+    The new deadline stays just inside the past so that the election keeps a
+    coherent voting window (start_date is an hour ago). Returns it, so a test
+    that needs to model a request made before the deadline can pin to it.
+    """
+    new_end_date = now_sgt() - timedelta(minutes=1)
+
     db = scenario["sessionmaker"]()
     try:
-        organizer = db.get(User, scenario["organizer_id"])
+        election = db.get(Election, scenario["election_id"])
+        election.end_date = new_end_date
+        db.commit()
+    finally:
+        db.close()
+
+    return new_end_date
+
+
+def _finalize(scenario):
+    """Run the real deadline finalize in its own session. Returns (result, error).
+
+    auto_finalize_if_expired returns None and raises nothing — for an election
+    that is no longer active it simply does no work — so `error` stays None
+    except for a genuine failure. Callers assert on the resulting state.
+    """
+    db = scenario["sessionmaker"]()
+    try:
         try:
-            return _finalize_election_close(db, scenario["election_id"], organizer), None
+            return auto_finalize_if_expired(db, scenario["election_id"]), None
         except HTTPException as error:
             db.rollback()
             return None, error
+    finally:
+        db.close()
+
+
+def _finalization_event_counts(scenario):
+    """How many close/publish audit rows this election has."""
+    db = scenario["sessionmaker"]()
+    try:
+        rows = (
+            db.query(AuditLog)
+            .filter(AuditLog.entity_id == scenario["election_id"])
+            .all()
+        )
+        return (
+            len([row for row in rows if row.action == "election_closed"]),
+            len([row for row in rows if row.action == "results_published"]),
+        )
     finally:
         db.close()
 
@@ -284,18 +338,21 @@ def _wait_until_postgres_reports_lock_wait(sessionmaker, backend_pid):
 
 
 # ---------------------------------------------------------------------------
-# A vote racing an in-progress close
+# A vote racing an in-progress finalization
 # ---------------------------------------------------------------------------
 
 
-def test_vote_blocks_while_a_close_holds_the_lock_then_is_rejected(
+def test_vote_blocks_while_finalization_holds_the_lock_then_is_rejected(
     scenario, monkeypatch
 ):
     """The central race.
 
-    A close holds the election row exclusively. A voter that arrives mid-close
-    must not slip a ballot in: it blocks on the lock, and once the close commits
-    it re-reads the completed status and is rejected.
+    A finalization holds the election row exclusively. A voter that arrives
+    mid-tally must not slip a ballot in: it blocks on the lock, and once the
+    tally commits it re-reads the completed status and is rejected.
+
+    This drives lock_election_for_close and _tally_and_complete directly, which
+    is exactly what auto_finalize_if_expired does once its deadline check passes.
     """
     closing_db: Session = scenario["sessionmaker"]()
     outcome = {}
@@ -321,7 +378,7 @@ def test_vote_blocks_while_a_close_holds_the_lock_then_is_rejected(
             vote_finished.set()
 
     try:
-        # Close transaction: take the exclusive lock and hold it open.
+        # Finalizing transaction: take the exclusive lock and hold it open.
         election = lock_election_for_close(closing_db, scenario["election_id"])
         assert election.status == ElectionStatus.active
 
@@ -336,7 +393,7 @@ def test_vote_blocks_while_a_close_holds_the_lock_then_is_rejected(
         )
         assert not vote_finished.is_set()
 
-        # Complete the close, releasing the lock.
+        # Complete the tally, releasing the lock.
         _tally_and_complete(closing_db, election, scenario["organizer_id"])
     finally:
         closing_db.close()
@@ -438,16 +495,30 @@ def test_no_receipt_exists_for_a_ballot_missing_from_the_tally(scenario, monkeyp
     assert len(receipts) == ballots == tallied
 
 
-def test_in_progress_vote_blocks_close_then_is_counted(scenario, monkeypatch):
-    """A vote holding the shared lock commits before the waiting close tallies."""
+def test_in_progress_vote_blocks_finalization_then_is_counted(scenario, monkeypatch):
+    """A vote holding the shared lock commits before the waiting finalize tallies.
+
+    The election is expired up front, because that is what makes finalization
+    eligible to run at all. The voter's clock is pinned to just before the
+    deadline for the duration of its request, which is the production situation
+    being reproduced: a ballot that passed its window check moments before the
+    deadline and is still committing when the first post-deadline results request
+    arrives. Only the voter's clock is doubled — the locks, the status guard, the
+    tally and the finalize path are all real.
+    """
+    deadline = _expire(scenario)
+    just_before_deadline = deadline - timedelta(seconds=30)
+
+    monkeypatch.setattr(vote_routes_module, "now_sgt", lambda: just_before_deadline)
+
     vote_lock_acquired = threading.Event()
     release_vote = threading.Event()
-    close_lock_attempted = threading.Event()
+    finalize_lock_attempted = threading.Event()
     vote_finished = threading.Event()
-    close_finished = threading.Event()
-    close_backend_pid = {}
+    finalize_finished = threading.Event()
+    finalize_backend_pid = {}
     vote_outcome = {}
-    close_outcome = {}
+    finalize_outcome = {}
     worker_errors = []
 
     real_vote_lock = vote_routes_module.lock_election_for_vote
@@ -461,8 +532,8 @@ def test_in_progress_vote_blocks_close_then_is_counted(scenario, monkeypatch):
         return election
 
     def observed_close_lock(db, election_id):
-        close_backend_pid["value"] = _postgres_backend_pid(db)
-        close_lock_attempted.set()
+        finalize_backend_pid["value"] = _postgres_backend_pid(db)
+        finalize_lock_attempted.set()
         return real_close_lock(db, election_id)
 
     monkeypatch.setattr(
@@ -482,16 +553,16 @@ def test_in_progress_vote_blocks_close_then_is_counted(scenario, monkeypatch):
         finally:
             vote_finished.set()
 
-    def close_election():
+    def finalize_election():
         try:
-            close_outcome["result"], close_outcome["error"] = _close(scenario)
+            finalize_outcome["result"], finalize_outcome["error"] = _finalize(scenario)
         except Exception as error:
             worker_errors.append(error)
         finally:
-            close_finished.set()
+            finalize_finished.set()
 
     voter_thread = threading.Thread(target=cast_vote, daemon=True)
-    close_thread = threading.Thread(target=close_election, daemon=True)
+    finalize_thread = threading.Thread(target=finalize_election, daemon=True)
 
     try:
         voter_thread.start()
@@ -499,30 +570,30 @@ def test_in_progress_vote_blocks_close_then_is_counted(scenario, monkeypatch):
             "the vote never acquired its shared election lock"
         )
 
-        close_thread.start()
-        assert close_lock_attempted.wait(timeout=COMPLETION_TIMEOUT_SECONDS), (
-            "the close never attempted to acquire its exclusive election lock"
+        finalize_thread.start()
+        assert finalize_lock_attempted.wait(timeout=COMPLETION_TIMEOUT_SECONDS), (
+            "the finalize never attempted to acquire its exclusive election lock"
         )
         _wait_until_postgres_reports_lock_wait(
-            scenario["sessionmaker"], close_backend_pid["value"]
+            scenario["sessionmaker"], finalize_backend_pid["value"]
         )
-        assert not close_finished.is_set()
+        assert not finalize_finished.is_set()
     finally:
         release_vote.set()
         if voter_thread.ident is not None:
             voter_thread.join(timeout=COMPLETION_TIMEOUT_SECONDS)
-        if close_thread.ident is not None:
-            close_thread.join(timeout=COMPLETION_TIMEOUT_SECONDS)
+        if finalize_thread.ident is not None:
+            finalize_thread.join(timeout=COMPLETION_TIMEOUT_SECONDS)
 
     assert vote_finished.is_set()
-    assert close_finished.is_set()
+    assert finalize_finished.is_set()
     assert not voter_thread.is_alive()
-    assert not close_thread.is_alive()
+    assert not finalize_thread.is_alive()
 
     assert not worker_errors
     assert vote_outcome["error"] is None, vote_outcome["error"]
     assert vote_outcome["result"].receipt_code
-    assert close_outcome["error"] is None, close_outcome["error"]
+    assert finalize_outcome["error"] is None, finalize_outcome["error"]
 
     ballots, tallied, status = _counts(scenario)
     assert status == ElectionStatus.completed
@@ -540,8 +611,9 @@ def test_turnout_equals_the_tallied_ballot_count(scenario):
         _, error = _vote(scenario, voter_index=index, candidate_index=index % 3)
         assert error is None, error
 
-    _, close_error = _close(scenario)
-    assert close_error is None, close_error
+    _expire(scenario)
+    _, finalize_error = _finalize(scenario)
+    assert finalize_error is None, finalize_error
 
     # A late voter must now be refused outright.
     late_result, late_error = _vote(scenario, voter_index=3)
@@ -560,8 +632,9 @@ def test_candidate_totals_match_the_final_ballot_set(scenario):
         _, error = _vote(scenario, voter_index=voter_index, candidate_index=candidate_index)
         assert error is None, error
 
-    _, close_error = _close(scenario)
-    assert close_error is None, close_error
+    _expire(scenario)
+    _, finalize_error = _finalize(scenario)
+    assert finalize_error is None, finalize_error
 
     db = scenario["sessionmaker"]()
     try:
@@ -581,15 +654,23 @@ def test_candidate_totals_match_the_final_ballot_set(scenario):
 
 
 # ---------------------------------------------------------------------------
-# Concurrent closes
+# Concurrent finalization
 # ---------------------------------------------------------------------------
 
 
-def test_two_concurrent_closes_tally_exactly_once(scenario, monkeypatch):
-    """A double tally would double the stored totals."""
+def test_two_concurrent_finalizations_tally_exactly_once(scenario, monkeypatch):
+    """A double tally would double the stored totals.
+
+    Two results requests arriving together after the deadline both call
+    auto_finalize_if_expired. The second blocks on the exclusive lock, then
+    re-reads the completed row and does nothing. Neither raises — the loser of
+    the race is a no-op, not a rejection — so the proof is in the stored state.
+    """
     for index in range(2):
         _, error = _vote(scenario, voter_index=index, candidate_index=0)
         assert error is None, error
+
+    _expire(scenario)
 
     results = []
     results_lock = threading.Lock()
@@ -626,27 +707,27 @@ def test_two_concurrent_closes_tally_exactly_once(scenario, monkeypatch):
         election_routes_module, "lock_election_for_close", coordinated_close_lock
     )
 
-    def close():
+    def finalize():
         try:
-            outcome = _close(scenario)
+            outcome = _finalize(scenario)
             with results_lock:
                 results.append(outcome)
         except Exception as error:
             worker_errors.append(error)
 
-    first_thread = threading.Thread(target=close, daemon=True)
-    second_thread = threading.Thread(target=close, daemon=True)
+    first_thread = threading.Thread(target=finalize, daemon=True)
+    second_thread = threading.Thread(target=finalize, daemon=True)
     threads = [first_thread, second_thread]
 
     try:
         first_thread.start()
         assert first_lock_acquired.wait(timeout=COMPLETION_TIMEOUT_SECONDS), (
-            "the first close never acquired its exclusive election lock"
+            "the first finalize never acquired its exclusive election lock"
         )
 
         second_thread.start()
         assert second_lock_attempted.wait(timeout=COMPLETION_TIMEOUT_SECONDS), (
-            "the second close never attempted to acquire the election lock"
+            "the second finalize never attempted to acquire the election lock"
         )
         _wait_until_postgres_reports_lock_wait(
             scenario["sessionmaker"], second_backend_pid["value"]
@@ -659,36 +740,51 @@ def test_two_concurrent_closes_tally_exactly_once(scenario, monkeypatch):
                 thread.join(timeout=COMPLETION_TIMEOUT_SECONDS)
 
     for thread in threads:
-        assert not thread.is_alive(), "a close never completed"
+        assert not thread.is_alive(), "a finalize never completed"
 
     assert not worker_errors
     assert len(results) == 2
-    assert second_lock_acquired.is_set()
+    assert second_lock_acquired.is_set(), (
+        "the second finalize never got the lock, so it never re-read the row"
+    )
 
-    closed_ok = [result for result, error in results if error is None]
-    rejected = [error for _, error in results if error is not None]
-
-    assert len(closed_ok) == 1, "more than one close succeeded"
-    assert len(rejected) == 1
-    assert rejected[0].status_code == 400
+    # Neither attempt raises: the loser simply finds a completed election and
+    # returns without work.
+    assert [error for _, error in results if error is not None] == []
 
     ballots, tallied, status = _counts(scenario)
     assert status == ElectionStatus.completed
     assert ballots == 2
     assert tallied == 2, "the tally ran twice and doubled the totals"
 
+    # One tally means exactly one close/publish pair, not two.
+    assert _finalization_event_counts(scenario) == (1, 1)
 
-def test_a_second_close_after_completion_is_rejected(scenario):
-    """Sequential double close: the status guard under the lock stops it."""
+
+def test_a_repeated_finalization_after_completion_does_nothing(scenario):
+    """Sequential double finalize: the status guard under the lock stops it.
+
+    The removed manual close answered 400 on the second attempt. Automatic
+    finalization has no rejection to assert, so the guarantee is that the second
+    call duplicates neither the cached results nor the audit events.
+    """
     _, error = _vote(scenario, voter_index=0)
     assert error is None, error
 
-    _, first_error = _close(scenario)
-    assert first_error is None
+    _expire(scenario)
 
-    _, second_error = _close(scenario)
-    assert second_error is not None
-    assert second_error.status_code == 400
+    _, first_error = _finalize(scenario)
+    assert first_error is None, first_error
 
-    ballots, tallied, _ = _counts(scenario)
+    ballots_after_first, tallied_after_first, status = _counts(scenario)
+    assert status == ElectionStatus.completed
+    assert _finalization_event_counts(scenario) == (1, 1)
+
+    _, second_error = _finalize(scenario)
+    assert second_error is None, second_error
+
+    ballots, tallied, status = _counts(scenario)
+    assert status == ElectionStatus.completed
+    assert (ballots, tallied) == (ballots_after_first, tallied_after_first)
     assert ballots == tallied == 1
+    assert _finalization_event_counts(scenario) == (1, 1)

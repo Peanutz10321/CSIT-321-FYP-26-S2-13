@@ -50,9 +50,11 @@ from app.security.ballot_commitment import (
 )
 from app.security.keystore import create_and_store_keypair
 
-# The single shared close/tally workflow, also used by the close endpoints and the
-# deadline auto-finalize. Importing it means the demo results come from exactly the
-# production path rather than a seed-only reimplementation.
+# The single shared close/tally workflow, also used by the deadline-driven
+# auto-finalize that serves an expired election's results. Importing it means the
+# demo results come from exactly the production path rather than a seed-only
+# reimplementation. It is called directly here because the seed owns its
+# transaction and there is no manual close endpoint to go through.
 # (Relocating it into app/services/ is left to PR 4, which owns that module.)
 from app.routes.election_routes import _tally_and_complete
 

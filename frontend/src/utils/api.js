@@ -190,10 +190,6 @@ async function createElection(data) {
   })
 }
 
-async function getAdminStats() {
-  return request('/admin/stats')
-}
-
 async function viewUser(userId) {
   return request(`/admin/users/${userId}`)
 }
@@ -252,7 +248,6 @@ export {
   createElection,
   extendElectionDeadline,
   submitVote,
-  getAdminStats,
   updateUserStatus,
   logout,
   decodeJwt,

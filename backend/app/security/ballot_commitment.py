@@ -6,23 +6,31 @@ merely prove that some row exists. The commitment is an HMAC-SHA256 over a
 canonical serialisation of the ballot's identifying fields and its complete
 ciphertext, keyed with RECEIPT_SIGNING_SECRET.
 
-One function is used everywhere a commitment is produced or checked — the vote
-route, the demo seed, the verification endpoint, and the tests — so the value
-can never be computed two different ways.
+One function is used everywhere a commitment is produced — the vote route, the
+demo seed, and the tests — so the value can never be computed two different ways.
 
 What this guarantees
 --------------------
 Changing any committed field (the ciphertext, receipt code, election, ballot id,
-submission time, or the ballot configuration) invalidates the commitment. It
-therefore detects modification made through database access alone, and
-accidental corruption.
+submission time, or the ballot configuration) would invalidate the commitment,
+so a stored commitment is capable of detecting modification made through
+database access alone, and accidental corruption.
+
+Not currently verified
+----------------------
+Commitments are generated and stored, and returned on the receipt, but nothing
+in the running application recomputes or compares them: there is no verification
+endpoint, no frontend check, and the tally does not validate ballots against
+their commitments before publishing results. The stored value is evidence that
+can be checked out of band; it is not an active tamper-detection control.
+Verification is deferred future work.
 
 What this does NOT guarantee
 ----------------------------
 This is not end-to-end verifiability. The backend holds the signing secret, so a
 compromised backend — or anyone who obtains that secret — can mint a commitment
 for a ballot it substitutes. The voter cannot independently verify their vote was
-counted as cast; they can only detect tampering by a party lacking the key.
+counted as cast; they could only detect tampering by a party lacking the key.
 Plaintext choices are never part of the commitment input.
 """
 
@@ -38,7 +46,6 @@ from app.config import settings
 # Bumping this changes every commitment. It exists so a future change to the
 # canonical form is an explicit, detectable migration rather than silent drift.
 COMMITMENT_SCHEME_VERSION = 1
-_LOWERCASE_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def _canonical_json(payload: dict) -> bytes:
@@ -122,35 +129,3 @@ def compute_ballot_commitment(
         message,
         hashlib.sha256,
     ).hexdigest()
-
-
-def commitment_matches(expected: str, stored: str | None) -> bool:
-    """Fail closed on malformed storage, then compare valid values in constant time."""
-    if (
-        not isinstance(stored, str)
-        or len(stored) != 64
-        or any(character not in _LOWERCASE_HEX_DIGITS for character in stored)
-    ):
-        return False
-
-    return hmac.compare_digest(expected, stored)
-
-
-def compute_commitment_for_ballot(ballot, election, candidate_ids) -> str:
-    """Recompute the commitment for a stored ballot from current database state.
-
-    Used by verification: if any covered field has been altered since the ballot
-    was cast, the recomputed value will not match what was stored.
-    """
-    return compute_ballot_commitment(
-        ballot_id=ballot.id,
-        election_id=ballot.election_id,
-        receipt_code=ballot.receipt_code,
-        encrypted_vote=ballot.encrypted_vote,
-        ballot_config_digest=ballot_configuration_digest(
-            getattr(election.ballot_type, "value", election.ballot_type),
-            election.max_selections,
-            candidate_ids,
-        ),
-        submitted_at=ballot.submitted_at,
-    )

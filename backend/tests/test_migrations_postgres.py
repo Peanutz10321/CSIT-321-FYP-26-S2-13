@@ -367,8 +367,9 @@ def seeded(upgraded_engine):
 def test_second_ballot_for_same_election_voter_is_rejected(seeded):
     """One ballot per enrolled voter, enforced by the database itself.
 
-    Note this enforces uniqueness only. It is not a fix for the vote/close race
-    condition, which is tracked separately in the remediation plan.
+    Note this enforces uniqueness only. It is not a fix for the
+    vote/finalization race condition, which is covered by
+    tests/test_vote_close_race_postgres.py.
     """
     engine, ids = seeded
 
