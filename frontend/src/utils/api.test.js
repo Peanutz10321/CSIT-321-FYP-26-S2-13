@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-import { BASE_URL, addElectionVoter, createElection, decodeJwt, submitVote } from './api.js'
+import {
+  BASE_URL,
+  activateElection,
+  addElectionVoter,
+  createElection,
+  createElectionDraft,
+  decodeJwt,
+  submitVote,
+  updateElection,
+} from './api.js'
 
 function mockFetchOnce(responseObj = {}) {
   globalThis.fetch = vi.fn().mockResolvedValue({
@@ -94,6 +103,51 @@ describe('core POST endpoints use the canonical backend paths', () => {
     expect(url).not.toMatch(/\/elections$/)
     expect(options.method).toBe('POST')
     expect(JSON.parse(options.body)).toEqual(payload)
+  })
+})
+
+describe('the draft lifecycle hits the existing election routes', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('createElectionDraft keeps its name and still posts to /elections/draft', async () => {
+    mockFetchOnce({ id: 'draft-1' })
+
+    const payload = {
+      title: 'Draft Vote',
+      candidates: [{ name: 'Candidate A' }],
+      eligible_voter_external_ids: ['VOTER-001'],
+    }
+    const draft = await createElectionDraft(payload)
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/elections/draft`)
+    expect(options.method).toBe('POST')
+    expect(JSON.parse(options.body)).toEqual(payload)
+    expect(draft.id).toBe('draft-1')
+  })
+
+  it('updateElection PUTs the draft payload to the election it names', async () => {
+    mockFetchOnce({ id: 'draft-1' })
+
+    await updateElection('draft-1', { title: 'Renamed', eligible_voter_external_ids: ['VOTER-002'] })
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/elections/draft-1`)
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body).eligible_voter_external_ids).toEqual(['VOTER-002'])
+  })
+
+  it('activateElection PATCHes the existing activate route with no body', async () => {
+    mockFetchOnce({ id: 'draft-1', status: 'active' })
+
+    await activateElection('draft-1')
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/elections/draft-1/activate`)
+    expect(options.method).toBe('PATCH')
+    expect(options.body).toBeUndefined()
   })
 })
 

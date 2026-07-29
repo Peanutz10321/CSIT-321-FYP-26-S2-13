@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  activateElection,
   createElection,
   createElectionDraft,
   getElectionDrafts,
   getEligibleVoters,
+  updateElection,
 } from '../utils/api'
 import { Button, Card, Input, PageHeader, PageShell, Textarea } from '../components/ui.jsx'
 
@@ -20,6 +22,14 @@ function CreateElection() {
   const [saving, setSaving] = useState(false)
   const [drafts, setDrafts] = useState([])
   const [selectedDraftId, setSelectedDraftId] = useState(null)
+  const [loadingDraft, setLoadingDraft] = useState(false)
+  const [draftLoadError, setDraftLoadError] = useState(null)
+  // Candidate description/photo_url as stored on the selected draft. The form only
+  // edits names, so a save has to carry the rest back rather than blank it.
+  const [draftCandidates, setDraftCandidates] = useState([])
+  // Bumped on every selection. Only the newest load may write into the form, so a
+  // slow response for draft A cannot land in draft B's fields.
+  const draftLoadRef = useRef(0)
 
   useEffect(() => {
     getElectionDrafts().then(setDrafts).catch(() => {})
@@ -36,7 +46,9 @@ function CreateElection() {
     return d.toISOString().slice(0, 19)
   }
 
-  const buildPayload = (candidateNames, voters = []) => ({
+  // Voters default to whatever is currently in the form, so a draft save carries the
+  // eligibility list just like an active create does and can restore it on resume.
+  const buildPayload = (candidateNames, voters = parseList(eligibleVotersText)) => ({
     title: title.trim(),
     description: null,
     start_date: nowLocalNaive(),
@@ -51,6 +63,38 @@ function CreateElection() {
     ballot_type: ballotType,
     max_selections: ballotType === 'single' ? 1 : Number(maxSelections),
   })
+
+  // The update payload for an existing draft. It differs from the create payload in
+  // what it deliberately leaves out: this form owns the title, candidate names,
+  // deadline, ballot config and voter list, and nothing else. Anything it does not
+  // show must survive a re-save untouched.
+  const buildUpdatePayload = (candidateNames) => {
+    const payload = buildPayload(candidateNames)
+
+    // start_date is fixed when the election is created; re-sending a fresh "now"
+    // would silently move it on every save.
+    delete payload.start_date
+
+    payload.candidates = payload.candidates.map((candidate) => {
+      const stored = draftCandidates.find((item) => item.name === candidate.name)
+      return stored
+        ? {
+            ...candidate,
+            description: stored.description ?? null,
+            photo_url: stored.photo_url ?? null,
+          }
+        : candidate
+    })
+
+    // The voter list never loaded, so the textarea is empty for a reason that has
+    // nothing to do with the organizer's intent. Omitting the field entirely leaves
+    // the stored list alone instead of clearing it.
+    if (draftLoadError) {
+      delete payload.eligible_voter_external_ids
+    }
+
+    return payload
+  }
 
   // Drafts may hold an incomplete configuration (backend re-validates the candidate
   // count at activation), so the count rule only applies to final active creation.
@@ -70,30 +114,49 @@ function CreateElection() {
   const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
 
   const handleSelectDraft = async (draft) => {
+    const loadId = ++draftLoadRef.current
+
     setSelectedDraftId(draft.id)
     setTitle(draft.title)
     setCandidatesText(draft.candidates.map((c) => c.name).join(', '))
+    setDraftCandidates(draft.candidates || [])
     setEndDate(draft.end_date ? draft.end_date.slice(0, 16) : '')
     setBallotType(draft.ballot_type || 'single')
     setMaxSelections(String(draft.max_selections ?? 1))
     setBallotError(null)
+    setDraftLoadError(null)
+    setEligibleVotersText('')
+    setLoadingDraft(true)
+
     try {
       const voters = await getEligibleVoters(draft.id)
+      if (draftLoadRef.current !== loadId) return
       setEligibleVotersText(voters.map((v) => v.voter_external_id).join(', '))
     } catch {
-      setEligibleVotersText('')
+      if (draftLoadRef.current !== loadId) return
+      setDraftLoadError(
+        'Could not load this draft’s eligible voters. Select the draft again to retry — saving now will leave the saved list unchanged.',
+      )
+    } finally {
+      if (draftLoadRef.current === loadId) setLoadingDraft(false)
     }
   }
 
   const handleClearSelection = () => {
+    // Invalidates any load still in flight, so it cannot populate the blank form.
+    draftLoadRef.current += 1
+
     setSelectedDraftId(null)
     setTitle('')
     setCandidatesText('')
+    setDraftCandidates([])
     setEndDate('')
     setEligibleVotersText('')
     setBallotType('single')
     setMaxSelections('1')
     setBallotError(null)
+    setDraftLoadError(null)
+    setLoadingDraft(false)
   }
 
   const handleSaveDraft = async () => {
@@ -111,7 +174,16 @@ function CreateElection() {
 
     setSaving(true)
     try {
-      await createElectionDraft(buildPayload(parseList(candidatesText)))
+      const candidateNames = parseList(candidatesText)
+      // A draft that is already open is edited in place; only a form with no draft
+      // selected creates one. Otherwise every save would fork another draft.
+      if (selectedDraftId) {
+        await updateElection(selectedDraftId, buildUpdatePayload(candidateNames))
+      } else {
+        const draft = await createElectionDraft(buildPayload(candidateNames))
+        setSelectedDraftId(draft.id)
+        setDraftCandidates(draft.candidates || [])
+      }
       await refreshDrafts()
     } catch (error) {
       alert(`Failed to save draft: ${error.message}`)
@@ -132,8 +204,22 @@ function CreateElection() {
 
     setSaving(true)
     try {
-      const election = await createElection(buildPayload(candidateNames, parseList(eligibleVotersText)))
-      navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'organizer' } })
+      let electionId
+
+      if (selectedDraftId) {
+        // Publishing a draft promotes that same row: save the latest edits, then
+        // activate it. Creating a second election would orphan the draft. If
+        // activation fails the election stays a draft with the edits already saved,
+        // so the organizer can fix the problem and publish again.
+        await updateElection(selectedDraftId, buildUpdatePayload(candidateNames))
+        await activateElection(selectedDraftId)
+        electionId = selectedDraftId
+      } else {
+        const election = await createElection(buildPayload(candidateNames))
+        electionId = election.id
+      }
+
+      navigate('/election-detail', { state: { electionId, from: 'active', role: 'organizer' } })
     } catch (error) {
       alert(`Failed to create election: ${error.message}`)
     } finally {
@@ -313,21 +399,38 @@ function CreateElection() {
                 id="election-voters"
                 rows={3}
                 value={eligibleVotersText}
-                onChange={(e) => setEligibleVotersText(e.target.value)}
+                onChange={(e) => {
+                  setEligibleVotersText(e.target.value)
+                  // Typing here takes ownership of the field: what the organizer
+                  // enters must be submitted, not suppressed by the failed load.
+                  setDraftLoadError(null)
+                }}
                 placeholder="Comma or newline separated external IDs"
                 className="resize-none"
               />
               <p className="mt-1.5 text-xs text-slate-500">
                 Only these external IDs will be eligible to vote in this election.
               </p>
+              {draftLoadError && (
+                <p role="alert" className="mt-2 text-sm text-rose-400">
+                  {draftLoadError}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="mt-8 flex flex-col gap-3 border-t border-slate-800 pt-6 sm:flex-row sm:justify-end sm:gap-4">
-            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving} className="sm:w-auto">
+            {/* Both actions submit the whole form, so neither may run while the
+                selected draft is still loading into it. */}
+            <Button
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={saving || loadingDraft}
+              className="sm:w-auto"
+            >
               {saving ? 'Saving...' : 'Save Election Draft'}
             </Button>
-            <Button onClick={handleCreate} disabled={saving} className="sm:w-auto">
+            <Button onClick={handleCreate} disabled={saving || loadingDraft} className="sm:w-auto">
               {saving ? 'Creating...' : 'Create'}
             </Button>
           </div>
