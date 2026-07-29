@@ -52,8 +52,8 @@ function UpdateAccount() {
 
       await updateCurrentUser(payload)
       navigate(-1)
-    } catch {
-      alert('Missing field or invalid input detected. Please key in again.')
+    } catch (error) {
+      alert(`Failed to update account: ${error.message}`)
     } finally {
       setSaving(false)
     }

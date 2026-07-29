@@ -571,7 +571,9 @@ def test_register_duplicate_username_is_rejected(client):
     )
 
     assert response.status_code == 400
-    assert "username" in response.json()["detail"].lower()
+    # Duplicate email and duplicate username answer identically so the endpoint
+    # cannot be used to discover which accounts exist.
+    assert "already exists" in response.json()["detail"].lower()
 
 
 def _admin_token(client, fake_db):
@@ -604,12 +606,19 @@ def test_unsuspend_missing_user_returns_404(client, fake_db):
     assert response.status_code == 404
 
 
-def test_admin_cannot_suspend_self(client, fake_db):
+def test_admin_can_change_own_status(client, fake_db):
+    """Self-status changes are allowed server-side.
+
+    The UI never offers this path: an admin's own row is filtered out of the
+    user list, and the status toggle is hidden when the target is the current
+    user. It is reachable only by calling the API directly.
+    """
     admin, token = _admin_token(client, fake_db)
 
     response = client.patch(f"/admin/users/{admin.id}/suspend", headers=auth_headers(token))
 
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert response.json()["status"] == "suspended"
 
 # ---------------------------------------------------------------------------
 # The admin-only organizer provisioning endpoint has been removed

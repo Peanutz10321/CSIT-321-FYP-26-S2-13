@@ -68,8 +68,8 @@ function UpdateElection() {
       }
       alert('Election updated successfully!')
       navigate(-1)
-    } catch {
-      alert('Missing field or invalid input detected. Please key in again.')
+    } catch (err) {
+      alert(`Failed to update election: ${err.message}`)
     } finally {
       setSaving(false)
     }

@@ -161,12 +161,6 @@ def updateUserStatus(
             detail="User not found",
         )
 
-    if user.id == current_admin.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot change your own status",
-        )
-
     # Same transition helper the suspend/unsuspend routes use, so a generic
     # /status to "suspended" is audited as user_suspended, and a no-op records
     # nothing.
@@ -201,11 +195,6 @@ def suspendUser(
             detail="User not found",
         )
 
-    if user.id == current_admin.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot change your own status",
-        )
 
     _apply_status_change(
         db,
@@ -236,12 +225,6 @@ def unsuspendUser(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
-        )
-
-    if user.id == current_admin.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You cannot change your own status",
         )
 
     _apply_status_change(

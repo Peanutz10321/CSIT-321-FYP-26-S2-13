@@ -75,7 +75,7 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     if existing_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists.",
+            detail="Account already exists.",
         )
 
     new_user = build_user_account(

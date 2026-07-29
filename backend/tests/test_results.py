@@ -279,12 +279,18 @@ class TestElectionResults:
         assert response.status_code == 200, response.text
         assert response.json()["election_id"] == election["id"]
 
-    def test_results_not_available_for_active_election(
+    def test_active_election_returns_unpublished_empty_results(
         self,
         organizer_token,
         voter_user,
         voter_token,
     ):
+        """Reading results is no longer gated on the election being completed.
+
+        An election that is still open answers 200, but the payload is empty:
+        candidate_results is written only by the close/tally workflow, so every
+        candidate reads zero and nothing is marked published.
+        """
         election = create_election_as_organizer(organizer_token)
         add_voter_to_election(organizer_token, election["id"], voter_user)
         set_election_status(election["id"], ElectionStatus.active)
@@ -294,8 +300,17 @@ class TestElectionResults:
             headers=auth_header(organizer_token),
         )
 
-        assert response.status_code == 400
-        assert "progress" in response.json()["detail"].lower() or "completed" in response.json()["detail"].lower()
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["status"] == "active"
+        assert body["winner"] is None
+        assert body["tied_candidates"] == []
+        assert all(item["total_votes"] == 0 for item in body["results"])
+        assert all(item["published_at"] is None for item in body["results"])
+
+        # The read stays side-effect-free: no tally ran and nothing was cached.
+        assert count_result_rows(election["id"]) == 0
 
     def test_organizer_cannot_view_other_organizers_results(
         self,
@@ -365,7 +380,16 @@ class TestElectionResults:
             headers=auth_header(organizer_token),
         )
 
-        assert response.status_code == 400
+        # A draft is never finalized, so the payload comes back empty and the
+        # election keeps its draft status.
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["status"] == "draft"
+        assert body["total_votes"] == 0
+        assert body["winner"] is None
+        assert all(item["total_votes"] == 0 for item in body["results"])
+        assert count_result_rows(election["id"]) == 0
 
     def test_tie_reports_no_single_winner(self, organizer_token, voter_user, voter_token):
         election = create_election_as_organizer(organizer_token)
@@ -1128,15 +1152,24 @@ class TestAutoFinalizeExpiredElection:
     def test_active_election_before_its_deadline_is_not_finalized(self, organizer_token):
         election, voter_tokens = build_active_election_with_voters(organizer_token, 4)
         cast_two_one_one(election, voter_tokens)
-        # The deadline is still in the future — results stay unavailable.
+        # The deadline is still in the future, so the read must not close the
+        # election even though it now answers 200.
 
         response = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
             headers=auth_header(organizer_token),
         )
 
-        assert response.status_code == 400
-        assert "progress" in response.json()["detail"].lower()
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["status"] == "active"
+        assert body["winner"] is None
+        # Candidate totals stay at zero because no tally has run, but turnout is
+        # a live COUNT of ballots and reports the four cast so far.
+        assert all(item["total_votes"] == 0 for item in body["results"])
+        assert body["total_votes"] == 4
+
         assert election_status(election["id"]) == ElectionStatus.active
         assert count_result_rows(election["id"]) == 0
 
@@ -1149,7 +1182,14 @@ class TestAutoFinalizeExpiredElection:
             headers=auth_header(organizer_token),
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 200, response.text
+
+        body = response.json()
+        assert body["status"] == "draft"
+        assert body["total_votes"] == 0
+        assert body["winner"] is None
+        assert all(item["total_votes"] == 0 for item in body["results"])
+
         assert election_status(election["id"]) == ElectionStatus.draft
         assert count_result_rows(election["id"]) == 0
 

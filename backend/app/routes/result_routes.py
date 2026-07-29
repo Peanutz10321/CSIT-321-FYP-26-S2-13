@@ -39,19 +39,28 @@ def getElectionResults(
     """
     election = db.query(Election).filter(Election.id == election_id).first()
 
-    if not election:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Election not found",
-        )
+    if current_user.role == UserRole.organizer:
 
-    if current_user.role == UserRole.organizer and election.organizer_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view results for elections that you created",
-        )
+        if not election:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Election not found or you did not create this election",
+            )
+
+        if election.organizer_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Election not found or you did not create this election",
+            )
 
     if current_user.role == UserRole.voter:
+
+        if not election:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Election not found or you did not participate in this election",
+            )
+
         voter_record = (
             db.query(ElectionVoter)
             .filter(
@@ -63,7 +72,7 @@ def getElectionResults(
         if not voter_record:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not eligible to view this election",
+                detail="Election not found or you did not participate in this election",
             )
 
     # An election whose deadline has passed is finalized here exactly once, using the
@@ -73,21 +82,7 @@ def getElectionResults(
     # side-effect-free and is never re-tallied.
     auto_finalize_if_expired(db, election.id)
 
-    # Results are only published for completed elections. An active election that is
-    # still within its voting period stays "in progress".
-    if election.status != ElectionStatus.completed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Results are not yet available. The election is still in progress.",
-        )
-
     candidates = db.query(Candidate).filter(Candidate.election_id == election.id).all()
-
-    if not candidates:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Election has no candidates",
-        )
 
     # Read the cached results produced at close time. No decryption happens here.
     result_rows = (

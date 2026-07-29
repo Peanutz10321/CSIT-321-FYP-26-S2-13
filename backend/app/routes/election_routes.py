@@ -404,13 +404,25 @@ def getElectionDetails(
         )
 
     if current_user.role == UserRole.organizer:
+        if not election:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Election not found or you did not create this election",
+            )
+        
         if election.organizer_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only view elections that you created",
+                detail="Election not found or you did not create this election",
             )
 
     elif current_user.role == UserRole.voter:
+        if not election:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Election not found or you are not eligible to view this election",
+            )
+        
         voter_record = (
             db.query(ElectionVoter)
             .filter(
@@ -423,7 +435,7 @@ def getElectionDetails(
         if not voter_record:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not eligible to view this election",
+                detail="Election not found or you are not eligible to view this election",
             )
 
     return election

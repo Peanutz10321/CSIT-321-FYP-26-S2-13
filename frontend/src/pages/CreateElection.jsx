@@ -134,8 +134,8 @@ function CreateElection() {
     try {
       const election = await createElection(buildPayload(candidateNames, parseList(eligibleVotersText)))
       navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'organizer' } })
-    } catch {
-      alert('Missing field or invalid input detected. Please key in again.')
+    } catch (error) {
+      alert(`Failed to create election: ${error.message}`)
     } finally {
       setSaving(false)
     }
