@@ -131,7 +131,9 @@ target legitimately differs per environment. They are required and empty by
 default, so an unset variable refuses the run instead of allowing it.
 
 The completed demo election is created **active**, given real encrypted ballots,
-and then closed through the same close/tally workflow the API uses. The script
+and then tallied through the same close/tally service the deadline-driven
+finalize uses (`_tally_and_complete`, invoked directly because the seed owns its
+transaction and there is no manual close endpoint). The script
 reads `candidate_results` back and aborts if the stored totals do not match the
 expected result, so the printed summary always reflects the database.
 
@@ -153,20 +155,26 @@ are not met. Generate an independent random value, for example with
 `python -c "import secrets; print(secrets.token_urlsafe(32))"`, and store it only
 in the deployment environment. Rotating it invalidates every existing commitment.
 
-Verify a ballot with `GET /votes/{vote_id}/verify` (the voter who cast it).
+**Verification is deferred future work.** Commitments are generated, stored and
+returned on the receipt, but nothing in the running application recomputes or
+compares them: there is no verification endpoint, no frontend check, and the
+tally does not validate ballots against their commitments before publishing
+results. A stored commitment is evidence that can be checked out of band by
+recomputing it from the ballot row and `RECEIPT_SIGNING_SECRET` — the application
+itself does not detect a mismatch.
 
-**What this detects:** modification of any committed field made through database
-access alone, and accidental corruption.
+**What the format would detect,** if such a check were implemented: modification
+of any committed field made through database access alone, and accidental
+corruption.
 
-**What this does not do:** it is not end-to-end verifiability. The backend holds
+**What it could never do:** it is not end-to-end verifiability. The backend holds
 the signing secret, so a compromised backend — or anyone who obtains that secret —
 can mint a commitment for a substituted ballot. A voter cannot independently
 confirm their vote was counted as cast.
 
-Ballots created before revision `0003` carry the old salted hash and will report
-`verified: false`. That is intentional: recomputing their commitments would attest
-to whatever the database happens to hold. Reseed or re-cast to obtain verifiable
-ballots.
+Ballots created before revision `0003` carry the old salted hash, so their stored
+value is not a commitment in this format at all and would not recompute. Reseed or
+re-cast to obtain ballots carrying the current format.
 
 ## Audit log hash chain
 

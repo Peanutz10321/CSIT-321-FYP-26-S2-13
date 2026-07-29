@@ -303,6 +303,22 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _expire_election(election_id: str):
+    """Push an election's deadline into the past without touching its status.
+
+    Requesting results afterwards is what triggers the tally: there is no manual
+    close endpoint, so this is how a test reaches a completed election.
+    """
+    db = SessionLocal()
+    try:
+        election = db.query(Election).filter(Election.id == UUID(election_id)).first()
+        assert election is not None
+        election.end_date = datetime.utcnow() - timedelta(days=1)
+        db.commit()
+    finally:
+        db.close()
+
+
 def _election_payload() -> dict:
     now = datetime.utcnow()
     return {
@@ -400,12 +416,9 @@ class TestHEIntegration:
             headers=_auth(self.voter_token),
         )
 
-        # The tally now runs at close time, not on read.
-        close = client.post(
-            f"{ELECTION_BASE}/{election['id']}/close",
-            headers=_auth(self.organizer_token),
-        )
-        assert close.status_code == 200, close.text
+        # The tally runs when an expired election's results are first requested,
+        # which is the only path that finalizes an election.
+        _expire_election(election["id"])
 
         r = client.get(
             f"{RESULT_BASE}/elections/{election['id']}",
@@ -413,6 +426,7 @@ class TestHEIntegration:
         )
 
         assert r.status_code == 200, r.text
+        assert r.json()["status"] == "completed"
         results = {item["candidate_id"]: item["total_votes"] for item in r.json()["results"]}
         assert results[candidate_id] == 1
         assert results[election["candidates"][1]["id"]] == 0

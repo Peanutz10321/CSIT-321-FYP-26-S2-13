@@ -16,14 +16,11 @@ from app.schemas.vote_schema import (
     VoteCreate,
     VoteResponse,
     VoteHistoryResponse,
-    VoteVerificationResponse,
 )
 from app.security.audit import log_event
 from app.security.ballot_commitment import (
     ballot_configuration_digest,
-    commitment_matches,
     compute_ballot_commitment,
-    compute_commitment_for_ballot,
 )
 from app.security.security import require_voter
 from app.security.homomorphic import deserialize_public_key, encrypt_ballot
@@ -296,63 +293,6 @@ def getVoteHistory(
         )
         for ballot, election in records
     ]
-
-
-@router.get("/{vote_id}/verify", response_model=VoteVerificationResponse)
-def verifyVote(
-    vote_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    current_voter: User = Depends(require_voter),
-):
-    """
-    Recompute a stored ballot's commitment and compare it with the stored value.
-
-    Detects modification of the ciphertext, receipt code, submission time, ballot
-    id, election, or ballot configuration made through database access alone.
-
-    It does NOT prove the ballot was counted as cast. The backend holds the
-    signing secret, so a compromised backend can produce a matching commitment
-    for a substituted ballot. See app/security/ballot_commitment.py.
-    """
-    ballot = (
-        db.query(Ballot)
-        .join(ElectionVoter, Ballot.election_voter_id == ElectionVoter.id)
-        .filter(
-            Ballot.id == vote_id,
-            ElectionVoter.voter_id == current_voter.id,
-        )
-        .first()
-    )
-
-    if not ballot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vote not found",
-        )
-
-    election = db.get(Election, ballot.election_id)
-    candidate_ids = [
-        str(candidate_id)
-        for (candidate_id,) in db.query(Candidate.id)
-        .filter(Candidate.election_id == ballot.election_id)
-        .all()
-    ]
-
-    expected = compute_commitment_for_ballot(ballot, election, candidate_ids)
-    verified = commitment_matches(expected, ballot.ballot_commitment)
-
-    return VoteVerificationResponse(
-        ballot_id=ballot.id,
-        election_id=ballot.election_id,
-        receipt_code=ballot.receipt_code,
-        verified=verified,
-        detail=(
-            "Ballot matches its commitment."
-            if verified
-            else "Ballot does not match its commitment. It was modified after "
-                 "submission, or it predates the commitment scheme."
-        ),
-    )
 
 
 @router.get("/{vote_id}", response_model=VoteResponse)

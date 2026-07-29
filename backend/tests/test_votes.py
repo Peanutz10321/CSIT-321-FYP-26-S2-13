@@ -547,20 +547,6 @@ def _stored_ballot(vote_id: str):
         db.close()
 
 
-def _mutate_ballot(vote_id: str, **fields):
-    from app.models.ballot import Ballot
-
-    db = SessionLocal()
-    try:
-        ballot = db.query(Ballot).filter(Ballot.id == UUID(vote_id)).first()
-        assert ballot is not None
-        for name, value in fields.items():
-            setattr(ballot, name, value)
-        db.commit()
-    finally:
-        db.close()
-
-
 class TestBallotCommitment:
     def test_receipt_returns_a_commitment(self, organizer_token, voter_user, voter_token):
         election = prepare_active_election_with_voter(organizer_token, voter_user)
@@ -611,135 +597,9 @@ class TestBallotCommitment:
 
         assert len(commitments) == 2
 
-
-class TestVerifyVote:
-    def _cast(self, organizer_token, voter_user, voter_token):
-        election = prepare_active_election_with_voter(organizer_token, voter_user)
-        response = client.post(
-            VOTE_BASE,
-            json={
-                "election_id": election["id"],
-                "candidate_id": election["candidates"][0]["id"],
-            },
-            headers=auth_header(voter_token),
-        )
-        assert response.status_code == 201, response.text
-        return election, response.json()
-
-    def test_an_untouched_ballot_verifies(self, organizer_token, voter_user, voter_token):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        response = client.get(
-            f"{VOTE_BASE}/{vote['id']}/verify",
-            headers=auth_header(voter_token),
-        )
-
-        assert response.status_code == 200, response.text
-        assert response.json()["verified"] is True
-
-    def test_a_tampered_ciphertext_fails_verification(
-        self, organizer_token, voter_user, voter_token
-    ):
-        """The property the old salted hash could not provide."""
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        _mutate_ballot(vote["id"], encrypted_vote='{"tampered":{"c":"1","e":0}}')
-
-        response = client.get(
-            f"{VOTE_BASE}/{vote['id']}/verify",
-            headers=auth_header(voter_token),
-        )
-
-        assert response.status_code == 200, response.text
-        assert response.json()["verified"] is False
-
-    def test_a_tampered_receipt_code_fails_verification(
-        self, organizer_token, voter_user, voter_token
-    ):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        _mutate_ballot(vote["id"], receipt_code="RCPT-TAMPERED0001")
-
-        assert (
-            client.get(
-                f"{VOTE_BASE}/{vote['id']}/verify",
-                headers=auth_header(voter_token),
-            ).json()["verified"]
-            is False
-        )
-
-    def test_a_tampered_submission_time_fails_verification(
-        self, organizer_token, voter_user, voter_token
-    ):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        _mutate_ballot(vote["id"], submitted_at=datetime(2020, 1, 1, 0, 0, 0))
-
-        assert (
-            client.get(
-                f"{VOTE_BASE}/{vote['id']}/verify",
-                headers=auth_header(voter_token),
-            ).json()["verified"]
-            is False
-        )
-
-    def test_a_legacy_commitment_fails_verification(
-        self, organizer_token, voter_user, voter_token
-    ):
-        """Ballots predating the scheme must report failure, never silent success."""
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        _mutate_ballot(vote["id"], ballot_commitment=uuid4().hex)
-
-        assert (
-            client.get(
-                f"{VOTE_BASE}/{vote['id']}/verify",
-                headers=auth_header(voter_token),
-            ).json()["verified"]
-            is False
-        )
-
-    def test_a_non_ascii_commitment_fails_closed(
-        self, organizer_token, voter_user, voter_token
-    ):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        _mutate_ballot(
-            vote["id"],
-            ballot_commitment="\N{LATIN SMALL LETTER E WITH ACUTE}" * 64,
-        )
-
-        response = client.get(
-            f"{VOTE_BASE}/{vote['id']}/verify",
-            headers=auth_header(voter_token),
-        )
-
-        assert response.status_code == 200, response.text
-        assert response.json()["verified"] is False
-
-    def test_another_voter_cannot_verify_someone_elses_ballot(
-        self, organizer_token, voter_user, voter_token, other_voter_token
-    ):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        response = client.get(
-            f"{VOTE_BASE}/{vote['id']}/verify",
-            headers=auth_header(other_voter_token),
-        )
-
-        assert response.status_code == 404
-
-    def test_verification_requires_authentication(
-        self, organizer_token, voter_user, voter_token
-    ):
-        _, vote = self._cast(organizer_token, voter_user, voter_token)
-
-        assert client.get(f"{VOTE_BASE}/{vote['id']}/verify").status_code == 401
-
-    def test_verifying_an_unknown_ballot_returns_404(self, voter_token):
-        response = client.get(
-            f"{VOTE_BASE}/{uuid4()}/verify",
-            headers=auth_header(voter_token),
-        )
-
-        assert response.status_code == 404
+    # Commitments are generated, stored and returned on the receipt, but the
+    # application no longer verifies them: GET /votes/{id}/verify was removed and
+    # nothing recomputes a stored commitment at request time. The tests that
+    # exercised that endpoint went with it. Commitment determinism, input
+    # sensitivity and ciphertext/configuration coverage remain covered as unit
+    # tests in tests/test_ballot_commitment.py.

@@ -3,7 +3,12 @@ Unit tests for the ballot commitment.
 
 These cover the properties the commitment is claimed to have: it is deterministic,
 it is keyed, it changes when any covered field changes, and it never carries a
-plaintext choice. The endpoint-level behaviour is covered in test_votes.py.
+plaintext choice.
+
+Nothing verifies a commitment at request time — there is no verification
+endpoint, and the tally does not check ballots against their commitments — so
+these are generation tests only. That a stored commitment equals the one handed
+back on the receipt is covered in test_votes.py::TestBallotCommitment.
 """
 
 from datetime import datetime, timedelta
@@ -18,7 +23,6 @@ from app.security.ballot_commitment import (
     _canonical_json,
     ballot_configuration_digest,
     build_commitment_input,
-    commitment_matches,
     compute_ballot_commitment,
 )
 
@@ -201,28 +205,10 @@ def test_configuration_digest_carries_no_plaintext_candidate_id():
 
 # ---------------------------------------------------------------------------
 # Comparison
+#
+# commitment_matches and compute_commitment_for_ballot were removed along with
+# GET /votes/{id}/verify — nothing in the application compares a stored
+# commitment against a recomputed one any more, so the constant-time comparison
+# and its fail-closed handling of malformed stored values have no production
+# consumer left to test. Generation is still covered above.
 # ---------------------------------------------------------------------------
-
-
-def test_commitment_matches_accepts_the_correct_value():
-    commitment = compute_ballot_commitment(**_inputs())
-    assert commitment_matches(commitment, commitment)
-
-
-def test_commitment_matches_rejects_a_different_value():
-    assert not commitment_matches(compute_ballot_commitment(**_inputs()), "0" * 64)
-
-
-@pytest.mark.parametrize(
-    "stored",
-    [
-        None,
-        "",
-        "0" * 63,
-        "g" * 64,
-        "\N{LATIN SMALL LETTER E WITH ACUTE}" * 64,
-    ],
-)
-def test_commitment_matches_rejects_a_malformed_stored_value(stored):
-    """A malformed or legacy value must fail closed, never raise."""
-    assert not commitment_matches(compute_ballot_commitment(**_inputs()), stored)

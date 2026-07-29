@@ -81,9 +81,9 @@ Each item below corresponds to a mechanism in the committed code.
 | **Ballot encryption** | Paillier (2048-bit) on the backend. Each ballot is a multi-hot vector — `E(1)` per selection, `E(0)` for every other candidate — with fresh randomisation, so stored ciphertexts cannot be matched against attacker-computed encryptions. |
 | **Tallying** | Ciphertexts are summed homomorphically per candidate; only the aggregate is decrypted. Individual ballots are never decrypted. |
 | **Key storage** | The Paillier private key is Fernet-encrypted under `KEYSTORE_MASTER_SECRET` and stored in a separate `election_keys` table — never on the election row. It is loaded only at tally time. |
-| **Vote/close concurrency** | Voting takes a shared row lock (`FOR SHARE`); closing takes an exclusive one (`FOR UPDATE`). A vote therefore either commits before the tally or is rejected afterwards, so a valid receipt always corresponds to a counted ballot. Two concurrent closes tally exactly once. |
+| **Vote/finalization concurrency** | Voting takes a shared row lock (`FOR SHARE`); the deadline-driven finalize takes an exclusive one (`FOR UPDATE`). A vote therefore either commits before the tally or is rejected afterwards, so a valid receipt always corresponds to a counted ballot. Two concurrent finalizations tally exactly once; the loser of the race re-reads the completed row and does no work. |
 | **Database constraints** | Uniqueness on `ballots.election_voter_id` (one ballot per enrolment), `ballots.receipt_code`, `ballots.ballot_commitment`, `users.external_id` / `username` / `email`, and `(election_id, voter_id)` on enrolments. Duplicate voting is prevented by the database, not only by an application check. |
-| **Ballot commitments** | HMAC-SHA256 over a canonical serialisation of the ballot id, election id, receipt code, **complete ciphertext**, a digest of the ballot configuration and candidate set, and the submission time — keyed with a dedicated `RECEIPT_SIGNING_SECRET`. Returned on every receipt. Comparison is constant-time and fails closed on malformed stored values. |
+| **Ballot commitments** | HMAC-SHA256 over a canonical serialisation of the ballot id, election id, receipt code, **complete ciphertext**, a digest of the ballot configuration and candidate set, and the submission time — keyed with a dedicated `RECEIPT_SIGNING_SECRET`. Generated for every ballot, stored on the row, and returned on the receipt. **Not currently verified:** there is no verification endpoint, no frontend check, and the tally does not validate ballots against their commitments before publishing results. The stored value is evidence that can be checked out of band; the running application does not detect a mismatch. Verification is deferred future work. |
 | **Audit log** | Append-only and hash-chained: each row stores its sequence number, the previous entry's hash, and a SHA-256 over its own canonical JSON. Appends lock a singleton head row, so concurrent writers cannot fork the chain. Audit rows commit atomically with the action they describe. `details` fields are restricted to an allowlist, and voter selections are never recorded. |
 | **Audit table privileges** | The runtime role must be a **dedicated non-owner role** that can `INSERT`/`SELECT` audit rows but not `UPDATE`, `DELETE` or `TRUNCATE` them. `scripts/verify_audit_permissions.py` checks *effective* privileges via `has_table_privilege`, catching inherited and `PUBLIC` grants. |
 | **Destructive-operation guards** | The demo seed and the PostgreSQL test suite both fail closed: the seed needs four independent conditions (arming flag, host allowlist, database allowlist, `--reset`), all empty by default; destructive tests hardcode localhost + a database named exactly `evoting_test` and require `ALLOW_DESTRUCTIVE_DB_TESTS=true`. |
@@ -111,10 +111,20 @@ PostgreSQL  (Supabase-compatible)
        ciphertexts, commitments, receipts, audit chain,
        Fernet-wrapped election private keys
 
-Tally (on close): ciphertexts are summed homomorphically, the private key
-is loaded from the keystore, and ONLY the per-candidate aggregate is
+Tally (on finalization): ciphertexts are summed homomorphically, the private
+key is loaded from the keystore, and ONLY the per-candidate aggregate is
 decrypted and cached in candidate_results.
 ```
+
+Elections are finalized automatically. There is no manual close endpoint: when an
+election is still active and its deadline has passed, the next request for its
+results runs the tally exactly once, caches the per-candidate totals, marks the
+election completed, and records the `election_closed` and `results_published`
+audit events. Finalization is therefore lazy — it happens on the first read after
+the deadline, not at the deadline itself. Voting is unaffected by that delay,
+because the vote path rejects ballots outside the voting window on the clock
+rather than on the election's status. Every later read is served from the cached
+results with no tally, no private-key load, and no write.
 
 | Layer | Technology |
 |---|---|
@@ -140,8 +150,7 @@ backend/
   app/
     core/                # time helpers (naive SGT)
     models/              # SQLAlchemy models
-    routes/              # auth, users, admin users, admin stats,
-                         #   elections, votes, results
+    routes/              # auth, users, admin users, elections, votes, results
     schemas/             # Pydantic request/response models
     security/            # jwt, password, security (role deps), homomorphic,
                          #   keystore, ballot_commitment, audit, audit_hash_v1
@@ -348,8 +357,8 @@ are skipped when `TEST_POSTGRES_URL` is unset.
 
 ### Backend — PostgreSQL-gated suite
 
-These cover migrations, uniqueness constraints, the vote/close race, audit-table
-privileges and demo seeding. **The fixtures drop and recreate the `public` schema**,
+These cover migrations, uniqueness constraints, the vote/finalization race,
+audit-table privileges and demo seeding. **The fixtures drop and recreate the `public` schema**,
 so they demand a disposable, explicitly allowlisted database.
 
 ```bash

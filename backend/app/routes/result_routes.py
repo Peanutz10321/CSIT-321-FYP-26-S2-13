@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.models.election import Election, ElectionStatus
+from app.models.election import Election
 from app.models.candidate import Candidate
 from app.models.candidate_result import CandidateResult
 from app.models.ballot import Ballot
@@ -25,17 +25,21 @@ def getElectionResults(
     current_user: User = Depends(get_current_user),
 ):
     """
-    View an election's published results.
+    View an election's results.
 
-    Results are computed and persisted exactly once by the shared close/tally
-    workflow. Normally that happens when the organizer explicitly closes the
-    election (POST /elections/{id}/close); if the deadline has passed while the
-    election is still active, this endpoint finalizes it once through that same
-    workflow (auto_finalize_if_expired) so results are available after the deadline
-    without a manual close.
+    This endpoint is the only trigger for finalization. There is no manual close
+    endpoint: when an election is still active and its deadline has passed, the
+    request finalizes it exactly once through auto_finalize_if_expired, which runs
+    the homomorphic tally under the election row lock and caches the per-candidate
+    results. Finalization is therefore lazy — it happens on the first read after
+    the deadline rather than at the deadline itself.
 
     Once an election is completed this is a pure read of the cached
     candidate_results — no tally, no private-key load, no write, no status change.
+
+    An election that has not been finalized (a draft, or one still inside its
+    voting period) returns its payload with every candidate total at zero, because
+    candidate_results rows are written only by the tally.
     """
     election = db.query(Election).filter(Election.id == election_id).first()
 
@@ -75,16 +79,16 @@ def getElectionResults(
                 detail="Election not found or you did not participate in this election",
             )
 
-    # An election whose deadline has passed is finalized here exactly once, using the
-    # same locked close/tally workflow as the explicit close endpoints. This is a
-    # no-op for drafts, for elections still inside their voting period, and for
-    # already-completed elections — so the ordinary read path below stays
-    # side-effect-free and is never re-tallied.
+    # An election whose deadline has passed is finalized here exactly once, under
+    # the exclusive election lock. This is the only finalization trigger in the
+    # application. It is a no-op for drafts, for elections still inside their
+    # voting period, and for already-completed elections — so the ordinary read
+    # path below stays side-effect-free and is never re-tallied.
     auto_finalize_if_expired(db, election.id)
 
     candidates = db.query(Candidate).filter(Candidate.election_id == election.id).all()
 
-    # Read the cached results produced at close time. No decryption happens here.
+    # Read the cached results produced by that tally. No decryption happens here.
     result_rows = (
         db.query(CandidateResult)
         .filter(CandidateResult.election_id == election.id)
