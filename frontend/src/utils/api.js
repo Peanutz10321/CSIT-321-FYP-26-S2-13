@@ -149,6 +149,12 @@ async function updateElection(electionId, data) {
   })
 }
 
+async function activateElection(electionId) {
+  return request(`/elections/${electionId}/activate`, {
+    method: 'PATCH',
+  })
+}
+
 async function extendElectionDeadline(electionId, newEndDate, title) {
   return request(`/elections/${electionId}/extend-deadline`, {
     method: 'PATCH',
@@ -244,6 +250,7 @@ export {
   getElectionDetails,
   getElectionResults,
   updateElection,
+  activateElection,
   createElectionDraft,
   createElection,
   extendElectionDeadline,

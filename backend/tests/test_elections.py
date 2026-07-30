@@ -840,3 +840,540 @@ class TestBallotPartialUpdate:
         assert by_id[multi["id"]]["ballot_type"] == "multi"
         for item in drafts.json():
             assert item["ballot_type"] in ("single", "multi")
+
+
+def draft_ids(organizer_token: str) -> list[str]:
+    response = client.get(f"{ELECTION_BASE}/drafts", headers=auth_header(organizer_token))
+    assert response.status_code == 200, response.text
+    return [item["id"] for item in response.json()]
+
+
+def voter_external_ids(organizer_token: str, election_id: str) -> set[str]:
+    response = client.get(
+        f"{ELECTION_BASE}/{election_id}/voters",
+        headers=auth_header(organizer_token),
+    )
+    assert response.status_code == 200, response.text
+    return {item["voter_external_id"] for item in response.json()}
+
+
+def eligibility_details(election_id: str) -> list[str]:
+    """The details blob of every eligibility_changed event for an election."""
+    from app.models.audit_log import AuditLog
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.action == "eligibility_changed",
+                AuditLog.entity_id == UUID(election_id),
+            )
+            .all()
+        )
+        return [row.details or "" for row in rows]
+    finally:
+        db.close()
+
+
+class TestDraftLifecycle:
+    """Save -> resume -> save again -> publish, all on a single election row.
+
+    The organizer edits one draft: re-saving must update it in place rather than
+    forking a new one, and publishing must promote that same row to active rather
+    than creating a second election alongside it.
+    """
+
+    def test_new_draft_saves_candidates_and_eligible_voters(self, organizer_token):
+        voter = register_user("voter")
+
+        payload = valid_election_payload()
+        payload["eligible_voter_external_ids"] = [voter["external_id"]]
+
+        response = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(organizer_token),
+        )
+        assert response.status_code == 201, response.text
+
+        draft = response.json()
+        assert draft["status"] == "draft"
+        assert len(draft["candidates"]) == 2
+        assert voter_external_ids(organizer_token, draft["id"]) == {voter["external_id"]}
+
+    def test_saving_an_opened_draft_updates_the_same_id(self, organizer_token):
+        voter = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "title": "Resumed Draft",
+                "candidates": [{"name": unique_text("Charlie"), "display_order": 1}],
+                "eligible_voter_external_ids": [voter["external_id"]],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["id"] == draft["id"]
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["title"] == "Resumed Draft"
+        assert fresh["status"] == "draft"
+        assert len(fresh["candidates"]) == 1
+        assert voter_external_ids(organizer_token, draft["id"]) == {voter["external_id"]}
+
+    def test_saving_an_existing_draft_creates_no_duplicate(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        before = draft_ids(organizer_token)
+
+        for title in ["Second Save", "Third Save"]:
+            response = put_election(organizer_token, draft["id"], {"title": title})
+            assert response.status_code == 200, response.text
+
+        after = draft_ids(organizer_token)
+        assert after == before
+        assert after.count(draft["id"]) == 1
+
+    def test_eligible_voters_are_synchronized_on_save(self, organizer_token):
+        kept = register_user("voter")
+        dropped = register_user("voter")
+        added = register_user("voter")
+
+        draft = create_election_as_organizer(organizer_token)
+
+        first = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [kept["external_id"], dropped["external_id"]]},
+        )
+        assert first.status_code == 200, first.text
+        assert voter_external_ids(organizer_token, draft["id"]) == {
+            kept["external_id"],
+            dropped["external_id"],
+        }
+
+        # Same list minus `dropped`, plus `added`: the stored set must match exactly.
+        second = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [kept["external_id"], added["external_id"]]},
+        )
+        assert second.status_code == 200, second.text
+        assert voter_external_ids(organizer_token, draft["id"]) == {
+            kept["external_id"],
+            added["external_id"],
+        }
+
+        details = eligibility_details(draft["id"])
+        # Two adds, then one add and one removal - `kept` is untouched the second time.
+        assert sum("added" in blob for blob in details) == 3
+        assert sum("removed" in blob for blob in details) == 1
+        removed_blob = next(blob for blob in details if "removed" in blob)
+        assert dropped["id"] in removed_blob
+
+    def test_omitting_eligible_voters_leaves_the_list_untouched(self, organizer_token):
+        voter = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+
+        seeded = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [voter["external_id"]]},
+        )
+        assert seeded.status_code == 200, seeded.text
+
+        # A request that never mentions eligibility must not clear it.
+        response = put_election(organizer_token, draft["id"], {"title": "Title Only"})
+        assert response.status_code == 200, response.text
+        assert voter_external_ids(organizer_token, draft["id"]) == {voter["external_id"]}
+
+    def test_invalid_voter_id_causes_no_partial_update(self, organizer_token):
+        existing = register_user("voter")
+        good = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+        original_title = draft["title"]
+
+        seeded = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [existing["external_id"]]},
+        )
+        assert seeded.status_code == 200, seeded.text
+        events_before = len(eligibility_details(draft["id"]))
+
+        # A good id followed by an unknown one, alongside a title change: none of it
+        # may land - not the title, not the addition, not the removal of `existing`.
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "title": "Should Not Persist",
+                "eligible_voter_external_ids": [good["external_id"], "NON_EXISTING_XYZ"],
+            },
+        )
+        assert response.status_code == 404
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["title"] == original_title
+        assert voter_external_ids(organizer_token, draft["id"]) == {existing["external_id"]}
+        assert len(eligibility_details(draft["id"])) == events_before
+
+    def test_duplicate_external_ids_are_rejected(self, organizer_token):
+        voter = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [voter["external_id"], voter["external_id"]]},
+        )
+        assert response.status_code == 400
+        assert "duplicate" in response.json()["detail"].lower()
+        assert voter_external_ids(organizer_token, draft["id"]) == set()
+
+    def test_non_voter_account_is_rejected_on_a_draft(self, organizer_token):
+        organizer = register_user("organizer")
+        draft = create_election_as_organizer(organizer_token)
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {"eligible_voter_external_ids": [organizer["external_id"]]},
+        )
+        assert response.status_code == 400
+        assert "voter" in response.json()["detail"].lower()
+
+    def test_publishing_a_draft_preserves_its_id_and_activates_it(self, organizer_token):
+        voter = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+        drafts_before = draft_ids(organizer_token)
+
+        saved = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "title": "Published Election",
+                "eligible_voter_external_ids": [voter["external_id"]],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+        activated = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert activated.status_code == 200, activated.text
+
+        data = activated.json()
+        assert data["id"] == draft["id"]
+        assert data["status"] == "active"
+        assert data["title"] == "Published Election"
+
+        # The draft was promoted, not copied: it leaves the draft list and no second
+        # election takes its place.
+        remaining = draft_ids(organizer_token)
+        assert draft["id"] not in remaining
+        assert len(remaining) == len(drafts_before) - 1
+
+    def test_failed_activation_leaves_a_recoverable_draft(self, organizer_token):
+        voter = register_user("voter")
+
+        payload = valid_election_payload()
+        payload["end_date"] = None  # no deadline: activation must refuse
+        created = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(organizer_token),
+        )
+        assert created.status_code == 201, created.text
+        draft = created.json()
+
+        saved = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "title": "Awaiting A Deadline",
+                "eligible_voter_external_ids": [voter["external_id"]],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+        activated = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert activated.status_code == 400
+        assert "deadline" in activated.json()["detail"].lower()
+
+        # The edits survive, so the organizer can add a deadline and publish again.
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["status"] == "draft"
+        assert fresh["title"] == "Awaiting A Deadline"
+        assert voter_external_ids(organizer_token, draft["id"]) == {voter["external_id"]}
+        assert draft["id"] in draft_ids(organizer_token)
+
+    def test_direct_active_creation_is_unchanged(self, organizer_token):
+        voter = register_user("voter")
+
+        payload = valid_election_payload()
+        payload["eligible_voter_external_ids"] = [voter["external_id"]]
+
+        response = client.post(ELECTION_BASE, json=payload, headers=auth_header(organizer_token))
+        assert response.status_code == 201, response.text
+
+        data = response.json()
+        assert data["status"] == "active"
+        assert len(data["candidates"]) == 2
+        assert voter_external_ids(organizer_token, data["id"]) == {voter["external_id"]}
+        # Direct creation never leaves a draft behind.
+        assert data["id"] not in draft_ids(organizer_token)
+
+
+def update_events(election_id: str) -> str:
+    """The details of every election_updated event for an election, joined.
+
+    The route records only the *names* of the fields that genuinely changed, so this
+    is how a test asserts that something was â€” or was not â€” treated as a change.
+    """
+    from app.models.audit_log import AuditLog
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.action == "election_updated",
+                AuditLog.entity_id == UUID(election_id),
+            )
+            .all()
+        )
+        return " ".join(row.details or "" for row in rows)
+    finally:
+        db.close()
+
+
+class TestDraftSnapshotUpdate:
+    """PUT /elections/{id} must treat a draft as a snapshot of the form that saved it.
+
+    An omitted field means "leave it alone"; an explicitly submitted value - including
+    null and the empty list - means "make it so". Those two are different requests and
+    the route has to tell them apart.
+    """
+
+    def test_explicit_null_end_date_clears_a_saved_deadline(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        assert draft["end_date"] is not None
+
+        response = put_election(organizer_token, draft["id"], {"end_date": None})
+        assert response.status_code == 200, response.text
+        assert response.json()["end_date"] is None
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["end_date"] is None
+        # A draft without a deadline simply cannot be published yet.
+        activated = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert activated.status_code == 400
+        assert "deadline" in activated.json()["detail"].lower()
+
+    def test_omitted_end_date_leaves_the_deadline_alone(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        original_end_date = draft["end_date"]
+
+        response = put_election(organizer_token, draft["id"], {"title": "Title Only"})
+        assert response.status_code == 200, response.text
+        assert response.json()["end_date"] == original_end_date
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["end_date"] == original_end_date
+
+    def test_clearing_the_deadline_is_recorded_once_and_is_idempotent(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+
+        first = put_election(organizer_token, draft["id"], {"end_date": None})
+        assert first.status_code == 200, first.text
+
+        # Re-submitting null against an already-null deadline is a no-op, so it must
+        # not be logged as another change.
+        second = put_election(organizer_token, draft["id"], {"end_date": None})
+        assert second.status_code == 200, second.text
+        assert second.json()["end_date"] is None
+
+        assert update_events(draft["id"]).count("end_date") == 1
+
+    def test_candidates_can_be_cleared_on_an_existing_draft(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        assert len(draft["candidates"]) == 2
+
+        response = put_election(organizer_token, draft["id"], {"candidates": []})
+        assert response.status_code == 200, response.text
+        assert response.json()["candidates"] == []
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["candidates"] == []
+        # Same relaxation the draft-create route grants, and activation still refuses.
+        activated = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert activated.status_code == 400
+        assert "candidate" in activated.json()["detail"].lower()
+
+    def test_cleared_candidates_can_be_retyped_on_the_same_draft(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+
+        cleared = put_election(organizer_token, draft["id"], {"candidates": []})
+        assert cleared.status_code == 200, cleared.text
+
+        retyped = put_election(
+            organizer_token,
+            draft["id"],
+            {"candidates": [{"name": "Dana"}, {"name": "Eli"}]},
+        )
+        assert retyped.status_code == 200, retyped.text
+
+        data = retyped.json()
+        assert data["id"] == draft["id"]
+        assert [c["name"] for c in data["candidates"]] == ["Dana", "Eli"]
+
+    def test_omitted_start_date_is_never_moved(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        original_start_date = draft["start_date"]
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {"title": "Renamed", "candidates": [{"name": "Dana"}]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["start_date"] == original_start_date
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["start_date"] == original_start_date
+        assert "start_date" not in update_events(draft["id"])
+
+    def test_update_rejects_deadline_before_stored_start_date(self, organizer_token):
+        draft = create_election_as_organizer(organizer_token)
+        original_end_date = draft["end_date"]
+        stored_start = datetime.fromisoformat(draft["start_date"])
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {"end_date": (stored_start - timedelta(minutes=1)).isoformat()},
+        )
+
+        assert response.status_code == 400
+        assert "after start date" in response.json()["detail"].lower()
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["end_date"] == original_end_date
+
+    def test_activation_rejects_draft_with_deadline_before_start_date(
+        self,
+        organizer_token,
+    ):
+        voter = register_user("voter")
+        payload = valid_election_payload()
+        stored_start = datetime.fromisoformat(payload["start_date"])
+        payload["end_date"] = (stored_start - timedelta(minutes=1)).isoformat()
+        payload["eligible_voter_external_ids"] = [voter["external_id"]]
+
+        created = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(organizer_token),
+        )
+        assert created.status_code == 201, created.text
+        draft = created.json()
+
+        response = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+
+        assert response.status_code == 400
+        assert "after start date" in response.json()["detail"].lower()
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["status"] == "draft"
+
+    def test_candidate_metadata_survives_a_resubmitted_name(self, organizer_token):
+        """A payload that re-sends a candidate's stored description keeps it, and the
+        no-op is not recorded as a change."""
+        payload = valid_election_payload()
+        created = client.post(
+            f"{ELECTION_BASE}/draft",
+            json=payload,
+            headers=auth_header(organizer_token),
+        )
+        assert created.status_code == 201, created.text
+        draft = created.json()
+        stored = draft["candidates"][0]
+        assert stored["description"] == "Candidate A"
+
+        response = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "candidates": [
+                    {
+                        "name": c["name"],
+                        "description": c["description"],
+                        "photo_url": c["photo_url"],
+                        "display_order": c["display_order"],
+                    }
+                    for c in draft["candidates"]
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+
+        fresh = get_election(organizer_token, draft["id"])
+        assert fresh["candidates"][0]["description"] == "Candidate A"
+        assert "candidates" not in update_events(draft["id"])
+
+    def test_update_then_activate_keeps_one_election_on_the_same_id(self, organizer_token):
+        """The publish path end to end: save the latest state, then activate that row."""
+        voter = register_user("voter")
+        draft = create_election_as_organizer(organizer_token)
+
+        saved = put_election(
+            organizer_token,
+            draft["id"],
+            {
+                "title": "Final Title",
+                "candidates": [{"name": "Dana"}, {"name": "Eli"}],
+                "eligible_voter_external_ids": [voter["external_id"]],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["id"] == draft["id"]
+
+        activated = client.patch(
+            f"{ELECTION_BASE}/{draft['id']}/activate",
+            headers=auth_header(organizer_token),
+        )
+        assert activated.status_code == 200, activated.text
+
+        data = activated.json()
+        assert data["id"] == draft["id"]
+        assert data["status"] == "active"
+        # The saved edits are what got published.
+        assert data["title"] == "Final Title"
+        assert [c["name"] for c in data["candidates"]] == ["Dana", "Eli"]
+
+        # Exactly one election carries this id, and nothing new appeared beside it.
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(Election)
+                .filter(Election.organizer_id == UUID(activated.json()["organizer_id"]))
+                .all()
+            )
+            assert len(rows) == 1
+            assert str(rows[0].id) == draft["id"]
+        finally:
+            db.close()

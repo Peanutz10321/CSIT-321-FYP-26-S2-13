@@ -35,10 +35,14 @@ class ElectionDraftCreate(BaseModel):
     # behaviour; cross-field/candidate-count rules are enforced in the routes.
     ballot_type: BallotType = BallotType.single
     max_selections: int = 1
+    # A draft carries its eligible voters too, so an organizer who saves and comes
+    # back later resumes the whole configuration. Activation is what requires the
+    # list to be non-empty.
+    eligible_voter_external_ids: list[str] = Field(default_factory=list)
 
 
 class ElectionCreate(ElectionDraftCreate):
-    eligible_voter_external_ids: list[str] = []
+    pass
 
 
 class ElectionResponse(BaseModel):
@@ -70,3 +74,5 @@ class ElectionUpdate(BaseModel):
     candidates: list[CandidateCreate] | None = None
     ballot_type: BallotType | None = None
     max_selections: int | None = None
+    # None means "leave the eligibility list alone"; a list replaces it wholesale.
+    eligible_voter_external_ids: list[str] | None = None

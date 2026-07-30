@@ -55,6 +55,99 @@ def _title_change_details(old_title: str | None, new_title: str | None) -> str:
     return audit_details(old_title=old_title, new_title=new_title)
 
 
+def _resolve_eligible_voters(db: Session, external_ids: list[str]) -> list[User]:
+    """Resolve submitted external ids to the users they name, or raise.
+
+    Purely a lookup: it writes nothing. Every caller runs it *before* touching the
+    database, so a bad id can never leave a half-applied eligibility list behind.
+    """
+    seen: set[str] = set()
+    voters: list[User] = []
+
+    for external_id in external_ids:
+        if external_id in seen:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate eligible voter '{external_id}'",
+            )
+        seen.add(external_id)
+
+        voter = db.query(User).filter(User.external_id == external_id).first()
+        if not voter:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Voter '{external_id}' not found",
+            )
+        if voter.role != UserRole.voter:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"'{external_id}' is not a voter account",
+            )
+        if voter.status != UserStatus.active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Voter '{external_id}' is not active",
+            )
+
+        voters.append(voter)
+
+    return voters
+
+
+def _sync_eligible_voters(
+    db: Session,
+    election: Election,
+    voters: list[User],
+    actor_user_id: UUID,
+) -> None:
+    """Make the election's eligibility list exactly ``voters``.
+
+    Adds the missing memberships and removes the ones no longer submitted, each
+    with its own eligibility_changed event in the same transaction as the change —
+    the same style the single-voter route uses. Removal is only ever reached on a
+    draft, which cannot hold ballots, so no cast vote can be orphaned.
+    """
+    existing = (
+        db.query(ElectionVoter)
+        .filter(ElectionVoter.election_id == election.id)
+        .all()
+    )
+    existing_voter_ids = {row.voter_id for row in existing}
+    submitted_voter_ids = {voter.id for voter in voters}
+
+    for voter in voters:
+        if voter.id in existing_voter_ids:
+            continue
+
+        db.add(ElectionVoter(
+            election_id=election.id,
+            voter_id=voter.id,
+            eligibility_status=EligibilityStatus.eligible,
+        ))
+        log_event(
+            db,
+            actor_user_id=actor_user_id,
+            action="eligibility_changed",
+            entity_type="election",
+            entity_id=election.id,
+            details=_eligibility_details("added", voter.id),
+        )
+
+    for row in existing:
+        if row.voter_id in submitted_voter_ids:
+            continue
+
+        db.delete(row)
+        log_event(
+            db,
+            actor_user_id=actor_user_id,
+            action="eligibility_changed",
+            entity_type="election",
+            entity_id=election.id,
+            details=_eligibility_details("removed", row.voter_id),
+        )
+
+
 def _validate_ballot_configuration(
     ballot_type: BallotType,
     max_selections: int,
@@ -98,6 +191,10 @@ def createElectionDraft(
     # Drafts stay relaxed (candidate list not final), so no candidate-count check.
     _validate_ballot_configuration(payload.ballot_type, payload.max_selections)
 
+    # Resolved before the first write so an unknown id fails the request without
+    # leaving a half-built draft behind. A draft may still have no voters at all.
+    eligible_voters = _resolve_eligible_voters(db, payload.eligible_voter_external_ids)
+
     election = Election(
         organizer_id=current_organizer.id,
         title=payload.title,
@@ -130,6 +227,8 @@ def createElectionDraft(
         entity_id=election.id,
         details=audit_details(status="draft"),
     )
+
+    _sync_eligible_voters(db, election, eligible_voters, current_organizer.id)
 
     db.commit()
 
@@ -185,6 +284,10 @@ def createElection(
         candidate_count=len(payload.candidates),
     )
 
+    # Resolved before the election row exists, so a bad id cannot leave a keypair or
+    # a partially populated voter list behind.
+    eligible_voters = _resolve_eligible_voters(db, payload.eligible_voter_external_ids)
+
     election = Election(
         organizer_id=current_organizer.id,
         title=payload.title,
@@ -230,48 +333,16 @@ def createElection(
         )
         db.add(candidate)
 
-    for external_id in payload.eligible_voter_external_ids:
-        voter = db.query(User).filter(User.external_id == external_id).first()
-        if not voter:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Voter '{external_id}' not found",
-            )
-        if voter.role != UserRole.voter:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"'{external_id}' is not a voter account",
-            )
-        if voter.status != UserStatus.active:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Voter '{external_id}' is not active",
-            )
-        db.add(ElectionVoter(
-            election_id=election.id,
-            voter_id=voter.id,
-            eligibility_status=EligibilityStatus.eligible,
-        ))
-        # One audit event per voter actually added, in the same transaction — a later
-        # rollback in this loop discards these along with the memberships.
-        log_event(
-            db,
-            actor_user_id=current_organizer.id,
-            action="eligibility_changed",
-            entity_type="election",
-            entity_id=election.id,
-            details=_eligibility_details("added", voter.id),
-        )
+    # One membership and one audit event per voter, in the same transaction as the
+    # election itself. The list is new, so this only ever adds.
+    _sync_eligible_voters(db, election, eligible_voters, current_organizer.id)
 
     # Direct creation finishes with an active election, exactly as the draft
     # activation route does, so it records the same activation event. Placed after
     # every activation prerequisite (key generation and eligibility) has succeeded
-    # but before the single shared commit, so a rollback in the loop above discards
-    # this along with the business records. key_generated is emitted once, above —
-    # not duplicated here.
+    # but before the single shared commit, so a failure anywhere in this handler
+    # discards this along with the business records. key_generated is emitted once,
+    # above — not duplicated here.
     log_event(
         db,
         actor_user_id=current_organizer.id,
@@ -472,11 +543,35 @@ def updateElection(
             detail="Only draft elections can be fully updated",
         )
 
-    if payload.start_date and payload.end_date and payload.end_date <= payload.start_date:
+    # Validate the resulting stored range, not only pairs supplied together. Draft
+    # updates commonly omit start_date, so a submitted deadline must still be
+    # compared with the election's existing start date. An explicit null deadline
+    # remains valid for an incomplete draft.
+    effective_start_date = (
+        payload.start_date if payload.start_date is not None else election.start_date
+    )
+    effective_end_date = (
+        payload.end_date
+        if "end_date" in payload.model_fields_set
+        else election.end_date
+    )
+    if (
+        effective_end_date is not None
+        and effective_end_date <= effective_start_date
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="End date must be after start date",
         )
+
+    # Resolved before the first assignment below, so a rejected voter id leaves the
+    # draft exactly as it was rather than half-updated. None means the request is not
+    # about eligibility at all and the stored list is left untouched.
+    eligible_voters = (
+        _resolve_eligible_voters(db, payload.eligible_voter_external_ids)
+        if payload.eligible_voter_external_ids is not None
+        else None
+    )
 
     # Captured before any assignment so the title event can report both sides.
     old_title = election.title
@@ -496,19 +591,23 @@ def updateElection(
         election.start_date = payload.start_date
         changed_fields.append("start_date")
 
-    if payload.end_date is not None and payload.end_date != election.end_date:
+    # end_date is the one field where None is a real value rather than "not
+    # supplied": an organizer who empties the deadline box sends end_date: null and
+    # expects the stored deadline to go away. model_fields_set is what separates
+    # that from a request that never mentions the field, which must leave it alone.
+    # Clearing is safe on a draft because activation refuses an election without a
+    # deadline, so the incomplete state can never be published.
+    if "end_date" in payload.model_fields_set and payload.end_date != election.end_date:
         election.end_date = payload.end_date
         changed_fields.append("end_date")
 
     # Replace the candidate list only when the resulting set actually differs, so
     # re-submitting the same candidates is not recorded as a change.
+    # An empty list is allowed here, matching draft creation: a draft may hold an
+    # incomplete configuration, and an organizer clearing the candidate box to retype
+    # it should not be blocked mid-edit. Activation is what refuses a candidate-less
+    # election.
     if payload.candidates is not None:
-        if len(payload.candidates) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="At least one candidate is required",
-            )
-
         existing = (
             db.query(Candidate)
             .filter(Candidate.election_id == election.id)
@@ -581,6 +680,11 @@ def updateElection(
             entity_id=election.id,
             details=_title_change_details(old_title, election.title),
         )
+
+    # Eligibility keeps its own eligibility_changed events rather than joining
+    # changed_fields, so the membership trail reads the same however it was edited.
+    if eligible_voters is not None:
+        _sync_eligible_voters(db, election, eligible_voters, current_organizer.id)
 
     db.commit()
 
@@ -1070,6 +1174,12 @@ def activateElection(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Election must have a deadline before activation",
+        )
+
+    if election.end_date <= election.start_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End date must be after start date",
         )
 
     eligible_voter_count = (
