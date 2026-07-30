@@ -24,6 +24,7 @@ function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('voter')
+  const [group, setGroup] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -40,6 +41,7 @@ function Register() {
         email: email.trim(),
         password,
         role,
+        group: group.trim() || undefined,
       }
 
       await registerUser(payload)
@@ -145,6 +147,23 @@ function Register() {
                 <option value="organizer">Organizer</option>
               </select>
             </div>
+
+            {/* <div>
+              <label htmlFor="group" className={labelClass}>
+                Organization <span className="text-slate-500 font-normal">(optional)</span>
+              </label>
+              <input
+                id="group"
+                type="text"
+                value={group}
+                onChange={(event) => setGroup(event.target.value)}
+                placeholder="Enter your organization name"
+                className={inputClass}
+              />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Organizers can add all members of an organization to a vote by entering this name.
+              </p >
+            </div> */}
 
             <div>
               <label htmlFor="password" className={labelClass}>
