@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
     # the route can answer 403 for system_admin instead of a blanket 422.
     password: Annotated[str, Field(min_length=8)] | None = None
     role: str = "voter"
+    # group: str | None = None
 
 
 class LoginRequest(BaseModel):
