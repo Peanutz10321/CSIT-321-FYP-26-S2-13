@@ -33,7 +33,6 @@ class User(Base):
     full_name = Column(String, nullable=True)
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=False)
-    # group = Column(String(50), nullable=True, index=True)
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
