@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
-from app.database import Bas
+from app.database import Base
 
 
 class UserRole(str, enum.Enum):
