@@ -149,12 +149,6 @@ async function updateElection(electionId, data) {
   })
 }
 
-async function activateElection(electionId) {
-  return request(`/elections/${electionId}/activate`, {
-    method: 'PATCH',
-  })
-}
-
 async function extendElectionDeadline(electionId, newEndDate, title) {
   return request(`/elections/${electionId}/extend-deadline`, {
     method: 'PATCH',
@@ -196,6 +190,10 @@ async function createElection(data) {
   })
 }
 
+async function getAdminStats() {
+  return request('/admin/stats')
+}
+
 async function viewUser(userId) {
   return request(`/admin/users/${userId}`)
 }
@@ -206,6 +204,27 @@ async function updateUserStatus(userId, status) {
     data: { status },
   })
 }
+
+// ===== Added: Organization Query API =====
+
+/**
+ * Get a list of all available organization names
+ * Access is restricted to organizers and system administrators only.
+ */
+// async function getGroups() {
+//   return request('/users/groups')
+// }
+
+// /**
+//  * Retrieve all active voters of an organization based on its name.
+//  * @param {string} groupName 
+//  * @returns {Promise<Array>} 
+//  */
+// async function getUsersByGroup(groupName) {
+//   return request(`/users/by-group/${encodeURIComponent(groupName)}`)
+// }
+
+// ===== Added end =====
 
 function logout() {
   localStorage.removeItem(TOKEN_STORAGE_KEY)
@@ -250,12 +269,14 @@ export {
   getElectionDetails,
   getElectionResults,
   updateElection,
-  activateElection,
   createElectionDraft,
   createElection,
   extendElectionDeadline,
   submitVote,
+  getAdminStats,
   updateUserStatus,
+  // getGroups,
+  // getUsersByGroup,
   logout,
   decodeJwt,
 }
