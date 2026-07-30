@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.database import get_db
+from app.models.user import User, UserRole
 from app.models.user import User
 from app.schemas.user_schema import UserResponse, UserUpdateRequest
 from app.security.password import hash_password
 from app.security.security import get_current_user
+from app.services.user_service import get_users_by_group, get_all_group_names
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -72,3 +75,49 @@ def updateCurrentUser(
     db.refresh(current_user)
 
     return current_user
+
+#     @router.get("/groups", response_model=List[str])
+# def get_group_names(
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """
+#     Get a list of all available organization names.
+#     Access is restricted to organizers and system administrators only.
+#     """
+#     # Access control check: Only organizers and system administrators can view this.
+#     if current_user.role not in [UserRole.organizer, UserRole.system_admin]:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only organizers and admins can view group list",
+#         )
+    
+#     groups = get_all_group_names(db)
+#     return groups
+
+
+# @router.get("/by-group/{group_name}", response_model=List[UserResponse])
+# def get_users_by_group_name(
+#     group_name: str,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """
+#     Retrieve all active voters of an organization based on its name.
+#     Access is restricted to organizers and system administrators only.
+#     """
+#     # Access control check: Only organizers and system administrators can view this.
+#     if current_user.role not in [UserRole.organizer, UserRole.system_admin]:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only organizers and admins can view users by group",
+#         )
+    
+#     users = get_users_by_group(db, group_name)
+#     if not users:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail=f"No active voters found in group: {group_name}",
+#         )
+    
+#     return users
