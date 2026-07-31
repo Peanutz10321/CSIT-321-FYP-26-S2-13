@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  activateElection,
   createElection,
   createElectionDraft,
   getElectionDrafts,
   getEligibleVoters,
-  // getGroups,
-  // getUsersByGroup,
+  getGroups,
+  getUsersByGroup,
+  updateElection,
 } from '../utils/api'
 import { Button, Card, Input, PageHeader, PageShell, Textarea } from '../components/ui.jsx'
 
@@ -22,63 +24,28 @@ function CreateElection() {
   const [saving, setSaving] = useState(false)
   const [drafts, setDrafts] = useState([])
   const [selectedDraftId, setSelectedDraftId] = useState(null)
-
-  
-  // const [groups, setGroups] = useState([])
-  // const [selectedGroup, setSelectedGroup] = useState('')
-  // const [groupMembers, setGroupMembers] = useState([])
-  // const [loadingGroups, setLoadingGroups] = useState(false)
-  // const [loadingMembers, setLoadingMembers] = useState(false)
-  // const [groupError, setGroupError] = useState(null)
-
-  // useEffect(() => {
-  //   fetchGroups()
-  // }, [])
-
-  // const fetchGroups = async () => {
-  //   setLoadingGroups(true)
-  //   setGroupError(null)
-  //   try {
-  //     const data = await getGroups()
-  //     setGroups(data)
-  //   } catch (error) {
-  //     console.error('Error fetching groups:', error)
-  //     setGroupError('Failed to load organizations')
-  //   } finally {
-  //     setLoadingGroups(false)
-  //   }
-  // }
-
-  // const handleGroupSelect = async (groupName) => {
-  //   setSelectedGroup(groupName)
-    
-  //   if (!groupName) {
-  //     setGroupMembers([])
-  //     return
-  //   }
-    
-  //   setLoadingMembers(true)
-  //   setGroupError(null)
-  //   try {
-  //     const members = await getUsersByGroup(groupName)
-  //     setGroupMembers(members)
-      
-      
-  //     const externalIds = members.map(m => m.external_id).join(', ')
-  //     setEligibleVotersText(externalIds)
-      
-      
-  //     setDraftLoadError(null)
-  //   } catch (error) {
-  //     console.error('Error fetching group members:', error)
-  //     setGroupError(`Failed to load members for "${groupName}"`)
-  //   } finally {
-  //     setLoadingMembers(false)
-  //   }
-  // }
+  const [loadingDraft, setLoadingDraft] = useState(false)
+  const [draftLoadError, setDraftLoadError] = useState(null)
+  // Candidate description/photo_url as stored on the selected draft. The form only
+  // edits names, so a save has to carry the rest back rather than blank it.
+  const [draftCandidates, setDraftCandidates] = useState([])
+  // Bumped on every selection. Only the newest load may write into the form, so a
+  // slow response for draft A cannot land in draft B's fields.
+  const draftLoadRef = useRef(0)
+  // Organisation picker: a shortcut that fills the eligible-voter box from a group's
+  // members. It only ever writes into that box — the draft lifecycle around it is
+  // untouched, and the box stays directly editable afterwards.
+  const [groups, setGroups] = useState([])
+  const [selectedGroup, setSelectedGroup] = useState('')
+  const [groupMemberCount, setGroupMemberCount] = useState(null)
+  const [loadingMembers, setLoadingMembers] = useState(false)
+  const [groupError, setGroupError] = useState(null)
 
   useEffect(() => {
     getElectionDrafts().then(setDrafts).catch(() => {})
+    // A missing/forbidden group directory just leaves the picker empty; it is an
+    // optional shortcut, so it must never block creating an election.
+    getGroups().then(setGroups).catch(() => setGroups([]))
   }, [])
 
   const parseList = (text) =>
@@ -92,7 +59,9 @@ function CreateElection() {
     return d.toISOString().slice(0, 19)
   }
 
-  const buildPayload = (candidateNames, voters = []) => ({
+  // Voters default to whatever is currently in the form, so a draft save carries the
+  // eligibility list just like an active create does and can restore it on resume.
+  const buildPayload = (candidateNames, voters = parseList(eligibleVotersText)) => ({
     title: title.trim(),
     description: null,
     start_date: nowLocalNaive(),
@@ -107,6 +76,38 @@ function CreateElection() {
     ballot_type: ballotType,
     max_selections: ballotType === 'single' ? 1 : Number(maxSelections),
   })
+
+  // The update payload for an existing draft. It differs from the create payload in
+  // what it deliberately leaves out: this form owns the title, candidate names,
+  // deadline, ballot config and voter list, and nothing else. Anything it does not
+  // show must survive a re-save untouched.
+  const buildUpdatePayload = (candidateNames) => {
+    const payload = buildPayload(candidateNames)
+
+    // start_date is fixed when the election is created; re-sending a fresh "now"
+    // would silently move it on every save.
+    delete payload.start_date
+
+    payload.candidates = payload.candidates.map((candidate) => {
+      const stored = draftCandidates.find((item) => item.name === candidate.name)
+      return stored
+        ? {
+            ...candidate,
+            description: stored.description ?? null,
+            photo_url: stored.photo_url ?? null,
+          }
+        : candidate
+    })
+
+    // The voter list never loaded, so the textarea is empty for a reason that has
+    // nothing to do with the organizer's intent. Omitting the field entirely leaves
+    // the stored list alone instead of clearing it.
+    if (draftLoadError) {
+      delete payload.eligible_voter_external_ids
+    }
+
+    return payload
+  }
 
   // Drafts may hold an incomplete configuration (backend re-validates the candidate
   // count at activation), so the count rule only applies to final active creation.
@@ -125,31 +126,86 @@ function CreateElection() {
 
   const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
 
+  const resetGroupSelection = () => {
+    setSelectedGroup('')
+    setGroupMemberCount(null)
+    setGroupError(null)
+    setLoadingMembers(false)
+  }
+
+  // Fills the eligible-voter box from a group's members. It replaces the box rather
+  // than appending, so the selection and the field always agree; the organizer can
+  // still edit the result by hand afterwards.
+  const handleGroupSelect = async (groupName) => {
+    setSelectedGroup(groupName)
+    setGroupError(null)
+    setGroupMemberCount(null)
+
+    if (!groupName) return
+
+    setLoadingMembers(true)
+    try {
+      const members = await getUsersByGroup(groupName)
+      setEligibleVotersText(members.map((member) => member.external_id).join(', '))
+      setGroupMemberCount(members.length)
+      // The box now holds a list the organizer chose deliberately, so a stale
+      // "we could not load the draft's voters" warning must not suppress it on save.
+      setDraftLoadError(null)
+    } catch (error) {
+      setGroupError(`Failed to load members for “${groupName}”: ${error.message}`)
+    } finally {
+      setLoadingMembers(false)
+    }
+  }
+
   const handleSelectDraft = async (draft) => {
+    const loadId = ++draftLoadRef.current
+
     setSelectedDraftId(draft.id)
     setTitle(draft.title)
     setCandidatesText(draft.candidates.map((c) => c.name).join(', '))
+    setDraftCandidates(draft.candidates || [])
     setEndDate(draft.end_date ? draft.end_date.slice(0, 16) : '')
     setBallotType(draft.ballot_type || 'single')
     setMaxSelections(String(draft.max_selections ?? 1))
     setBallotError(null)
+    setDraftLoadError(null)
+    setEligibleVotersText('')
+    setLoadingDraft(true)
+    // The draft's own saved voters are about to be loaded, so any group shortcut
+    // used on the previous form no longer describes what is in the box.
+    resetGroupSelection()
+
     try {
       const voters = await getEligibleVoters(draft.id)
+      if (draftLoadRef.current !== loadId) return
       setEligibleVotersText(voters.map((v) => v.voter_external_id).join(', '))
     } catch {
-      setEligibleVotersText('')
+      if (draftLoadRef.current !== loadId) return
+      setDraftLoadError(
+        'Could not load this draft’s eligible voters. Select the draft again to retry — saving now will leave the saved list unchanged.',
+      )
+    } finally {
+      if (draftLoadRef.current === loadId) setLoadingDraft(false)
     }
   }
 
   const handleClearSelection = () => {
+    // Invalidates any load still in flight, so it cannot populate the blank form.
+    draftLoadRef.current += 1
+
     setSelectedDraftId(null)
     setTitle('')
     setCandidatesText('')
+    setDraftCandidates([])
     setEndDate('')
     setEligibleVotersText('')
     setBallotType('single')
     setMaxSelections('1')
     setBallotError(null)
+    setDraftLoadError(null)
+    setLoadingDraft(false)
+    resetGroupSelection()
   }
 
   const handleSaveDraft = async () => {
@@ -167,7 +223,16 @@ function CreateElection() {
 
     setSaving(true)
     try {
-      await createElectionDraft(buildPayload(parseList(candidatesText)))
+      const candidateNames = parseList(candidatesText)
+      // A draft that is already open is edited in place; only a form with no draft
+      // selected creates one. Otherwise every save would fork another draft.
+      if (selectedDraftId) {
+        await updateElection(selectedDraftId, buildUpdatePayload(candidateNames))
+      } else {
+        const draft = await createElectionDraft(buildPayload(candidateNames))
+        setSelectedDraftId(draft.id)
+        setDraftCandidates(draft.candidates || [])
+      }
       await refreshDrafts()
     } catch (error) {
       alert(`Failed to save draft: ${error.message}`)
@@ -188,10 +253,24 @@ function CreateElection() {
 
     setSaving(true)
     try {
-      const election = await createElection(buildPayload(candidateNames, parseList(eligibleVotersText)))
-      navigate('/election-detail', { state: { electionId: election.id, from: 'active', role: 'organizer' } })
-    } catch {
-      alert('Missing field or invalid input detected. Please key in again.')
+      let electionId
+
+      if (selectedDraftId) {
+        // Publishing a draft promotes that same row: save the latest edits, then
+        // activate it. Creating a second election would orphan the draft. If
+        // activation fails the election stays a draft with the edits already saved,
+        // so the organizer can fix the problem and publish again.
+        await updateElection(selectedDraftId, buildUpdatePayload(candidateNames))
+        await activateElection(selectedDraftId)
+        electionId = selectedDraftId
+      } else {
+        const election = await createElection(buildPayload(candidateNames))
+        electionId = election.id
+      }
+
+      navigate('/election-detail', { state: { electionId, from: 'active', role: 'organizer' } })
+    } catch (error) {
+      alert(`Failed to create election: ${error.message}`)
     } finally {
       setSaving(false)
     }
@@ -360,66 +439,53 @@ function CreateElection() {
                 </p>
               )}
             </fieldset>
-{/* 
-              <div className="border-t border-slate-800 pt-4">
-              <label className={fieldLabel}>
-                Add Voters by Organization
+
+            <div>
+              <label htmlFor="election-group" className={fieldLabel}>
+                Add Voters by Organization{' '}
+                <span className="font-normal text-slate-500">(optional)</span>
               </label>
-              
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="flex-1">
-                  <select
-                    value={selectedGroup}
-                    onChange={(e) => handleGroupSelect(e.target.value)}
-                    disabled={loadingGroups || loadingDraft}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
-                  >
-                    <option value="">Select an organization</option>
-                    {groups.map((group) => (
-                      <option key={group} value={group}>
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="flex items-center text-sm text-slate-400 whitespace-nowrap">
-                  {loadingMembers ? (
-                    <span>Loading members...</span>
-                  ) : selectedGroup ? (
-                    <span className="flex items-center gap-2">
-                      <span className="text-white font-semibold">{groupMembers.length}</span>
-                      <span>members found</span>
-                      {groupMembers.length > 0 && (
-                        <span className="text-green-400 text-xs">✓ Added to voters list</span>
-                      )}
-                    </span>
-                  ) : null}
-                </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <select
+                  id="election-group"
+                  value={selectedGroup}
+                  onChange={(e) => handleGroupSelect(e.target.value)}
+                  // Same rule as Save/Create: the draft is still loading into the
+                  // form, so nothing may overwrite the voter box yet.
+                  disabled={loadingMembers || loadingDraft}
+                  className="w-full flex-1 rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
+                >
+                  <option value="">Select an organization</option>
+                  {groups.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-slate-400 sm:whitespace-nowrap">
+                  {loadingMembers
+                    ? 'Loading members...'
+                    : groupMemberCount !== null
+                      ? `${groupMemberCount} member${groupMemberCount === 1 ? '' : 's'} added below`
+                      : ''}
+                </p>
               </div>
-              
               {groupError && (
                 <p role="alert" className="mt-2 text-sm text-rose-400">
                   {groupError}
-                </p >
+                </p>
               )}
-              
-              {selectedGroup && groupMembers.length === 0 && !loadingMembers && (
+              {groupMemberCount === 0 && !loadingMembers && (
                 <p className="mt-2 text-sm text-amber-400">
-                  ⚠️ No active voters found in this organization.
-                </p >
+                  No active voters are registered in this organization.
+                </p>
               )}
-              
-              {groups.length === 0 && !loadingGroups && (
-                <p className="mt-2 text-xs text-slate-500">
-                  No organizations available. Voters need to register with an organization first.
-                </p >
-              )}
-              
-              <p className="mt-2 text-xs text-slate-500">
-                Select an organization to automatically add all its members as eligible voters.
-              </p >
-            </div> */}
+              <p className="mt-1.5 text-xs text-slate-500">
+                {groups.length === 0
+                  ? 'No organizations available yet — voters set one when they register.'
+                  : 'Replaces the list below with every active voter in the organization. You can still edit it by hand.'}
+              </p>
+            </div>
 
             <div>
               <label htmlFor="election-voters" className={fieldLabel}>
@@ -429,21 +495,38 @@ function CreateElection() {
                 id="election-voters"
                 rows={3}
                 value={eligibleVotersText}
-                onChange={(e) => setEligibleVotersText(e.target.value)}
+                onChange={(e) => {
+                  setEligibleVotersText(e.target.value)
+                  // Typing here takes ownership of the field: what the organizer
+                  // enters must be submitted, not suppressed by the failed load.
+                  setDraftLoadError(null)
+                }}
                 placeholder="Comma or newline separated external IDs"
                 className="resize-none"
               />
               <p className="mt-1.5 text-xs text-slate-500">
                 Only these external IDs will be eligible to vote in this election.
               </p>
+              {draftLoadError && (
+                <p role="alert" className="mt-2 text-sm text-rose-400">
+                  {draftLoadError}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="mt-8 flex flex-col gap-3 border-t border-slate-800 pt-6 sm:flex-row sm:justify-end sm:gap-4">
-            <Button variant="secondary" onClick={handleSaveDraft} disabled={saving} className="sm:w-auto">
+            {/* Both actions submit the whole form, so neither may run while the
+                selected draft is still loading into it. */}
+            <Button
+              variant="secondary"
+              onClick={handleSaveDraft}
+              disabled={saving || loadingDraft}
+              className="sm:w-auto"
+            >
               {saving ? 'Saving...' : 'Save Election Draft'}
             </Button>
-            <Button onClick={handleCreate} disabled={saving} className="sm:w-auto">
+            <Button onClick={handleCreate} disabled={saving || loadingDraft} className="sm:w-auto">
               {saving ? 'Creating...' : 'Create'}
             </Button>
           </div>

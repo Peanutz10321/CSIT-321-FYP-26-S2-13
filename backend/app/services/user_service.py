@@ -64,7 +64,7 @@ def build_user_account(
     email: str,
     password: str,
     full_name: str | None = None,
-    # group: str | None = None,
+    group: str | None = None,
 ) -> User:
     """Construct an active User and add it to the session (caller commits)."""
     return User(
@@ -75,79 +75,52 @@ def build_user_account(
         password_hash=hash_password(password),
         role=role,
         status=UserStatus.active,
-        # group=group,
+        group=(group or "").strip() or None,
     )
 
-# def get_users_by_group(db: Session, group_name: str) -> list[User]:
-#     """
-#     Retrieve all active voter users by organization name.
-    
-#     Args:
-#         db: Database session
-#         group_name: Organization name (exact match)
-    
-#     Returns:
-#         List of active voters belonging to the organization
-#     """
-#     if not group_name or not group_name.strip():
-#         return []
-    
-#     return (
-#         db.query(User)
-#         .filter(
-#             User.group == group_name.strip(),
-#             User.role == UserRole.voter,
-#             User.status == UserStatus.active
-#         )
-#         .all()
-#     )
+
+def get_all_group_names(db: Session) -> list[str]:
+    """Every distinct group that currently has at least one active voter in it.
+
+    Groups with no selectable members are left out, so an organizer is never shown
+    an option that would resolve to an empty voter list.
+    """
+    rows = (
+        db.query(User.group)
+        .filter(
+            User.group.isnot(None),
+            User.group != "",
+            User.role == UserRole.voter,
+            User.status == UserStatus.active,
+        )
+        .distinct()
+        .all()
+    )
+
+    return sorted(group for (group,) in rows if group)
 
 
-# def get_users_by_group_partial(db: Session, group_name: str) -> list[User]:
-#     """
-#     A fuzzy search for all active voter users based on the organization name prefix.
-#     Used to support partial matching of organization names.
-    
-#     Args:
-#         db: Database session
-#         group_name: Organization name prefix
-    
-#     Returns:
-#         List of active voters whose organization name contains this string
-#     """
-#     if not group_name or not group_name.strip():
-#         return []
-    
-#     return (
-#         db.query(User)
-#         .filter(
-#             User.group.ilike(f"%{group_name.strip()}%"),  
-#             User.role == UserRole.voter,
-#             User.status == UserStatus.active
-#         )
-#         .all()
-#     )
+def get_users_by_group(db: Session, group_name: str) -> list[User]:
+    """The active voters in one group, matched exactly.
 
+    Only active voters are returned because these are the accounts an organizer can
+    actually enrol — an organizer, a suspended account, or a pending one would be
+    rejected by the election routes anyway.
 
-# def get_all_group_names(db: Session) -> list[str]:
-#     """
-#     Retrieve all existing organization names (without duplicates) for the organizer to choose from.
-    
-#     Args:
-#         db: Database session
-    
-#     Returns:
-#         List of all non-empty organization names (after deduplication)
-#     """
-#     results = (
-#         db.query(User.group)
-#         .filter(
-#             User.group.isnot(None),
-#             User.group != "",
-#             User.role == UserRole.voter,
-#             User.status == UserStatus.active
-#         )
-#         .distinct()
-#         .all()
-#     )
-#     return [result[0] for result in results if result[0]]
+    The commented scaffolding also carried a partial/ilike variant. It is left out:
+    nothing calls it, and a fuzzy match would silently pull in members of a
+    different organisation whose name happens to share a prefix.
+    """
+    if not group_name or not group_name.strip():
+        return []
+
+    return (
+        db.query(User)
+        .filter(
+            User.group == group_name.strip(),
+            User.role == UserRole.voter,
+            User.status == UserStatus.active,
+        )
+        .order_by(User.external_id)
+        .all()
+    )

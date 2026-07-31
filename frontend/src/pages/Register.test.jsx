@@ -115,3 +115,82 @@ describe('Register submit flow', () => {
     expect(payload.role).toBe('organizer')
   })
 })
+
+describe('Register organization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    decodeJwt.mockReturnValue({ role: 'voter' })
+    loginUser.mockResolvedValue({ access_token: 'token' })
+    registerUser.mockResolvedValue({ id: 'u1' })
+  })
+
+  it('submits the organization the user typed', async () => {
+    renderRegister()
+    fillCredentials()
+    fireEvent.change(screen.getByLabelText(/Organization/), {
+      target: { value: 'Engineering Club' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() =>
+      expect(registerUser).toHaveBeenCalledWith(
+        expect.objectContaining({ group: 'Engineering Club' }),
+      ),
+    )
+  })
+
+  it('limits the organization field to the 50-character column width', () => {
+    renderRegister()
+
+    // Matches String(GROUP_MAX_LENGTH) on the model and the schema's max_length,
+    // so the form cannot compose a value the backend will reject with a 422.
+    expect(screen.getByLabelText(/Organization/)).toHaveAttribute('maxlength', '50')
+  })
+
+  it('submits a 50-character organization unchanged', async () => {
+    const name = 'G'.repeat(50)
+    renderRegister()
+    fillCredentials()
+    fireEvent.change(screen.getByLabelText(/Organization/), { target: { value: name } })
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() =>
+      expect(registerUser).toHaveBeenCalledWith(expect.objectContaining({ group: name })),
+    )
+  })
+
+  it('trims surrounding whitespace from the organization', async () => {
+    renderRegister()
+    fillCredentials()
+    fireEvent.change(screen.getByLabelText(/Organization/), {
+      target: { value: '  Engineering Club  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() =>
+      expect(registerUser).toHaveBeenCalledWith(
+        expect.objectContaining({ group: 'Engineering Club' }),
+      ),
+    )
+  })
+
+  it('omits the field entirely when only whitespace is given', async () => {
+    renderRegister()
+    fillCredentials()
+    fireEvent.change(screen.getByLabelText(/Organization/), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() => expect(registerUser).toHaveBeenCalled())
+    expect(registerUser.mock.calls[0][0]).not.toHaveProperty('group')
+  })
+
+  it('omits the field entirely when no organization is given', async () => {
+    renderRegister()
+    fillCredentials()
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }))
+
+    await waitFor(() => expect(registerUser).toHaveBeenCalled())
+    // Absent rather than "": the column is nullable and blank is not a group.
+    expect(registerUser.mock.calls[0][0]).not.toHaveProperty('group')
+  })
+})
