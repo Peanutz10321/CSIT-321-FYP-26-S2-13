@@ -9,6 +9,8 @@ import {
   createElectionDraft,
   getElectionDrafts,
   getEligibleVoters,
+  getGroups,
+  getUsersByGroup,
   updateElection,
 } from '../utils/api.js'
 
@@ -25,11 +27,14 @@ vi.mock('../utils/api.js', () => ({
   createElectionDraft: vi.fn(),
   getElectionDrafts: vi.fn(),
   getEligibleVoters: vi.fn(),
+  getGroups: vi.fn(),
+  getUsersByGroup: vi.fn(),
   updateElection: vi.fn(),
 }))
 
-function renderCreate(drafts = []) {
+function renderCreate(drafts = [], groups = []) {
   getElectionDrafts.mockResolvedValue(drafts)
+  getGroups.mockResolvedValue(groups)
   render(
     <MemoryRouter>
       <CreateElection />
@@ -577,5 +582,170 @@ describe('CreateElection draft update payload', () => {
     expect(navigateMock).toHaveBeenCalledWith('/election-detail', {
       state: { electionId: 'draft-m', from: 'active', role: 'organizer' },
     })
+  })
+})
+
+describe('CreateElection organization selector', () => {
+  const groupDraft = {
+    id: 'draft-g',
+    title: 'Draft G',
+    ballot_type: 'single',
+    max_selections: 1,
+    end_date: null,
+    candidates: [{ name: 'Alice' }],
+  }
+
+  const votersBox = () =>
+    screen.getByPlaceholderText('Comma or newline separated external IDs')
+  const groupPicker = () => screen.getByLabelText(/Add Voters by Organization/)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+  })
+
+  it('selecting a group fills the eligible-voter field with member external ids', async () => {
+    getUsersByGroup.mockResolvedValue([
+      { external_id: 'VOTER-001' },
+      { external_id: 'VOTER-002' },
+    ])
+    renderCreate([], ['Engineering Club', 'Chess Club'])
+
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
+    )
+
+    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+
+    await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001, VOTER-002'))
+    expect(getUsersByGroup).toHaveBeenCalledWith('Engineering Club')
+  })
+
+  it('a group chosen for a new election is submitted by the direct creation flow', async () => {
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    createElection.mockResolvedValue({ id: 'e-new' })
+    renderCreate([], ['Engineering Club'])
+
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
+    )
+    fillBasics({ voters: '' })
+    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(createElection).toHaveBeenCalledWith(
+        expect.objectContaining({ eligible_voter_external_ids: ['VOTER-001'] }),
+      ),
+    )
+    expect(updateElection).not.toHaveBeenCalled()
+  })
+
+  it('a group chosen on a saved draft updates that same draft id', async () => {
+    getEligibleVoters.mockResolvedValue([{ voter_external_id: 'OLD-1' }])
+    getUsersByGroup.mockResolvedValue([
+      { external_id: 'VOTER-001' },
+      { external_id: 'VOTER-002' },
+    ])
+    updateElection.mockResolvedValue({ id: 'draft-g' })
+    renderCreate([groupDraft], ['Engineering Club'])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft G' }))
+    await waitFor(() => expect(votersBox()).toHaveValue('OLD-1'))
+
+    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001, VOTER-002'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Election Draft' }))
+
+    // Same draft, new voter list â€” the lifecycle is untouched by the shortcut.
+    await waitFor(() =>
+      expect(updateElection).toHaveBeenCalledWith(
+        'draft-g',
+        expect.objectContaining({
+          eligible_voter_external_ids: ['VOTER-001', 'VOTER-002'],
+        }),
+      ),
+    )
+    expect(createElectionDraft).not.toHaveBeenCalled()
+  })
+
+  it('the picker is disabled while a draft is still loading', async () => {
+    let resolveVoters
+    getEligibleVoters.mockReturnValue(
+      new Promise((resolve) => {
+        resolveVoters = resolve
+      }),
+    )
+    renderCreate([groupDraft], ['Engineering Club'])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft G' }))
+
+    await waitFor(() => expect(groupPicker()).toBeDisabled())
+
+    resolveVoters([{ voter_external_id: 'OLD-1' }])
+    await waitFor(() => expect(groupPicker()).toBeEnabled())
+  })
+
+  it('choosing a group after a failed voter load submits the group members', async () => {
+    getEligibleVoters.mockRejectedValue(new Error('network down'))
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    updateElection.mockResolvedValue({ id: 'draft-g' })
+    renderCreate([groupDraft], ['Engineering Club'])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft G' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /Could not load this draft.s eligible voters/,
+    )
+
+    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Election Draft' }))
+
+    // The failed-load suppression is lifted, because the organizer picked this list.
+    await waitFor(() =>
+      expect(updateElection).toHaveBeenCalledWith(
+        'draft-g',
+        expect.objectContaining({ eligible_voter_external_ids: ['VOTER-001'] }),
+      ),
+    )
+  })
+
+  it('a failed group lookup reports the error and leaves the voter list alone', async () => {
+    getUsersByGroup.mockRejectedValue(new Error('boom'))
+    renderCreate([], ['Engineering Club'])
+
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
+    )
+    fireEvent.change(votersBox(), { target: { value: 'TYPED-1' } })
+    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Failed to load members/)
+    expect(votersBox()).toHaveValue('TYPED-1')
+  })
+
+  it('an unavailable group directory leaves the rest of the form usable', async () => {
+    getGroups.mockRejectedValue(new Error('403'))
+    createElection.mockResolvedValue({ id: 'e-new' })
+    getElectionDrafts.mockResolvedValue([])
+
+    render(
+      <MemoryRouter>
+        <CreateElection />
+      </MemoryRouter>,
+    )
+
+    fillBasics({ voters: 'VOTER-009' })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(createElection).toHaveBeenCalledWith(
+        expect.objectContaining({ eligible_voter_external_ids: ['VOTER-009'] }),
+      ),
+    )
   })
 })

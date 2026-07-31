@@ -2,6 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.user import GROUP_MAX_LENGTH
+
 
 class RegisterRequest(BaseModel):
     username: str | None = None
@@ -14,7 +16,11 @@ class RegisterRequest(BaseModel):
     # the route can answer 403 for system_admin instead of a blanket 422.
     password: Annotated[str, Field(min_length=8)] | None = None
     role: str = "voter"
-    # group: str | None = None
+    # Optional. Lets an organizer later add every member of an organisation at once.
+    # Length-checked here so an oversized value is a 422 describing the field, rather
+    # than a StringDataRightTruncation surfacing from PostgreSQL as a 500. Blank and
+    # whitespace-only input is normalised to NULL when the account is built.
+    group: Annotated[str, Field(max_length=GROUP_MAX_LENGTH)] | None = None
 
 
 class LoginRequest(BaseModel):

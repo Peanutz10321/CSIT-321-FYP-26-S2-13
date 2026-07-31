@@ -7,6 +7,8 @@ import {
   createElection,
   createElectionDraft,
   decodeJwt,
+  getGroups,
+  getUsersByGroup,
   submitVote,
   updateElection,
 } from './api.js'
@@ -148,6 +150,59 @@ describe('the draft lifecycle hits the existing election routes', () => {
     expect(url).toBe(`${BASE_URL}/elections/draft-1/activate`)
     expect(options.method).toBe('PATCH')
     expect(options.body).toBeUndefined()
+  })
+})
+
+describe('the organization directory hits the user routes', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('getGroups reads /users/groups', async () => {
+    mockFetchOnce(['Engineering Club'])
+
+    const groups = await getGroups()
+
+    const { url, options } = lastRequest()
+    expect(url).toBe(`${BASE_URL}/users/groups`)
+    expect(options.method).toBe('GET')
+    expect(groups).toEqual(['Engineering Club'])
+  })
+
+  it('getUsersByGroup sends the name as an encoded query parameter', async () => {
+    mockFetchOnce([{ external_id: 'VOTER-001' }])
+
+    await getUsersByGroup('Engineering Club & Co')
+
+    const { url, options } = lastRequest()
+    // A query parameter, not a path segment: '?' separates, and the value is
+    // fully escaped so '&' cannot start a second parameter.
+    expect(url).toBe(`${BASE_URL}/users/by-group?group_name=Engineering+Club+%26+Co`)
+    expect(options.method).toBe('GET')
+
+    // The server must see exactly what was asked for, whatever the escaping.
+    const parsed = new URL(url)
+    expect(parsed.pathname).toBe('/users/by-group')
+    expect(parsed.searchParams.get('group_name')).toBe('Engineering Club & Co')
+  })
+
+  it.each([
+    ['a slash', 'Faculty of Arts / Humanities'],
+    ['an ampersand', 'Chess & Go Club'],
+    ['a question mark and hash', 'Who? #1 Club'],
+    ['a plus sign', 'C++ Society'],
+    ['non-ASCII characters', '工程学会'],
+    ['everything at once', 'A/B & C 研究 #1'],
+  ])('getUsersByGroup round-trips a group name containing %s', async (_label, groupName) => {
+    mockFetchOnce([])
+
+    await getUsersByGroup(groupName)
+
+    const { url } = lastRequest()
+    const parsed = new URL(url)
+    // The path never changes — a '/' in the name cannot become a route boundary.
+    expect(parsed.pathname).toBe('/users/by-group')
+    expect(parsed.searchParams.get('group_name')).toBe(groupName)
   })
 })
 

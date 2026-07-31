@@ -41,7 +41,8 @@ function Register() {
         email: email.trim(),
         password,
         role,
-        group: group.trim() || undefined,
+        // Optional: omitted entirely when blank, so the backend stores null.
+        ...(group.trim() ? { group: group.trim() } : {}),
       }
 
       await registerUser(payload)
@@ -148,22 +149,23 @@ function Register() {
               </select>
             </div>
 
-            {/* <div>
+            <div>
               <label htmlFor="group" className={labelClass}>
-                Organization <span className="text-slate-500 font-normal">(optional)</span>
+                Organization <span className="font-normal text-slate-500">(optional)</span>
               </label>
               <input
                 id="group"
                 type="text"
+                maxLength={50}
                 value={group}
                 onChange={(event) => setGroup(event.target.value)}
                 placeholder="Enter your organization name"
                 className={inputClass}
               />
               <p className="mt-1.5 text-xs text-slate-500">
-                Organizers can add all members of an organization to a vote by entering this name.
-              </p >
-            </div> */}
+                Organizers can add every member of an organization to an election at once.
+              </p>
+            </div>
 
             <div>
               <label htmlFor="password" className={labelClass}>

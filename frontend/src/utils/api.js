@@ -134,6 +134,19 @@ async function addElectionVoter(electionId, externalId) {
   return addEligibleVoter(electionId, { external_id: externalId })
 }
 
+// Organisation directory. Both routes are organizer/admin only on the backend.
+async function getGroups() {
+  return request('/users/groups')
+}
+
+// A query parameter, not a path segment: group names are free text that can hold
+// '/', '&' and non-ASCII characters, and a percent-encoded '/' inside a path is not
+// reliably preserved across proxies. URLSearchParams encodes the whole value.
+async function getUsersByGroup(groupName) {
+  const params = new URLSearchParams({ group_name: groupName })
+  return request(`/users/by-group?${params.toString()}`)
+}
+
 async function getElectionDetails(electionId) {
   return request(`/elections/${electionId}`)
 }
@@ -146,6 +159,12 @@ async function updateElection(electionId, data) {
   return request(`/elections/${electionId}`, {
     method: 'PUT',
     data,
+  })
+}
+
+async function activateElection(electionId) {
+  return request(`/elections/${electionId}/activate`, {
+    method: 'PATCH',
   })
 }
 
@@ -190,10 +209,6 @@ async function createElection(data) {
   })
 }
 
-async function getAdminStats() {
-  return request('/admin/stats')
-}
-
 async function viewUser(userId) {
   return request(`/admin/users/${userId}`)
 }
@@ -204,27 +219,6 @@ async function updateUserStatus(userId, status) {
     data: { status },
   })
 }
-
-// ===== Added: Organization Query API =====
-
-/**
- * Get a list of all available organization names
- * Access is restricted to organizers and system administrators only.
- */
-// async function getGroups() {
-//   return request('/users/groups')
-// }
-
-// /**
-//  * Retrieve all active voters of an organization based on its name.
-//  * @param {string} groupName 
-//  * @returns {Promise<Array>} 
-//  */
-// async function getUsersByGroup(groupName) {
-//   return request(`/users/by-group/${encodeURIComponent(groupName)}`)
-// }
-
-// ===== Added end =====
 
 function logout() {
   localStorage.removeItem(TOKEN_STORAGE_KEY)
@@ -266,17 +260,17 @@ export {
   getEligibleVoters,
   addEligibleVoter,
   addElectionVoter,
+  getGroups,
+  getUsersByGroup,
   getElectionDetails,
   getElectionResults,
   updateElection,
+  activateElection,
   createElectionDraft,
   createElection,
   extendElectionDeadline,
   submitVote,
-  getAdminStats,
   updateUserStatus,
-  // getGroups,
-  // getUsersByGroup,
   logout,
   decodeJwt,
 }

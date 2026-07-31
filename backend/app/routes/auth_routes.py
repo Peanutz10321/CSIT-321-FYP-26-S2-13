@@ -84,7 +84,7 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
         username=request.username,
         email=request.email,
         password=request.password,
-        # group=request.group
+        group=request.group,
     )
 
     db.add(new_user)
