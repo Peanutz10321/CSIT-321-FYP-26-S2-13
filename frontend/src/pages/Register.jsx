@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { registerUser, loginUser, decodeJwt } from '../utils/api.js'
 
+// Inline lock SVG so the auth pages stay self-contained and match the landing brand.
 function LockIcon({ className = 'h-4 w-4' }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -147,6 +148,22 @@ function Register() {
               </select>
             </div>
 
+            {/* <div>
+              <label htmlFor="group" className={labelClass}>
+                Organization <span className="text-slate-500 font-normal">(optional)</span>
+              </label>
+              <input
+                id="group"
+                type="text"
+                value={group}
+                onChange={(event) => setGroup(event.target.value)}
+                placeholder="Enter your organization name"
+                className={inputClass}
+              />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Organizers can add all members of an organization to a vote by entering this name.
+              </p >
+            </div> */}
 
             <div>
               <label htmlFor="password" className={labelClass}>
