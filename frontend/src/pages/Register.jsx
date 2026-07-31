@@ -24,6 +24,7 @@ function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('voter')
+  const [group, setGroup] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -40,6 +41,8 @@ function Register() {
         email: email.trim(),
         password,
         role,
+        // Optional: omitted entirely when blank, so the backend stores null.
+        ...(group.trim() ? { group: group.trim() } : {}),
       }
 
       await registerUser(payload)
@@ -144,6 +147,24 @@ function Register() {
                 <option value="voter">Voter</option>
                 <option value="organizer">Organizer</option>
               </select>
+            </div>
+
+            <div>
+              <label htmlFor="group" className={labelClass}>
+                Organization <span className="font-normal text-slate-500">(optional)</span>
+              </label>
+              <input
+                id="group"
+                type="text"
+                maxLength={50}
+                value={group}
+                onChange={(event) => setGroup(event.target.value)}
+                placeholder="Enter your organization name"
+                className={inputClass}
+              />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Organizers can add every member of an organization to an election at once.
+              </p>
             </div>
 
             <div>

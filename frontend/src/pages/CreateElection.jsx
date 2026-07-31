@@ -6,6 +6,8 @@ import {
   createElectionDraft,
   getElectionDrafts,
   getEligibleVoters,
+  getGroups,
+  getUsersByGroup,
   updateElection,
 } from '../utils/api'
 import { Button, Card, Input, PageHeader, PageShell, Textarea } from '../components/ui.jsx'
@@ -30,9 +32,20 @@ function CreateElection() {
   // Bumped on every selection. Only the newest load may write into the form, so a
   // slow response for draft A cannot land in draft B's fields.
   const draftLoadRef = useRef(0)
+  // Organisation picker: a shortcut that fills the eligible-voter box from a group's
+  // members. It only ever writes into that box — the draft lifecycle around it is
+  // untouched, and the box stays directly editable afterwards.
+  const [groups, setGroups] = useState([])
+  const [selectedGroup, setSelectedGroup] = useState('')
+  const [groupMemberCount, setGroupMemberCount] = useState(null)
+  const [loadingMembers, setLoadingMembers] = useState(false)
+  const [groupError, setGroupError] = useState(null)
 
   useEffect(() => {
     getElectionDrafts().then(setDrafts).catch(() => {})
+    // A missing/forbidden group directory just leaves the picker empty; it is an
+    // optional shortcut, so it must never block creating an election.
+    getGroups().then(setGroups).catch(() => setGroups([]))
   }, [])
 
   const parseList = (text) =>
@@ -113,6 +126,38 @@ function CreateElection() {
 
   const refreshDrafts = () => getElectionDrafts().then(setDrafts).catch(() => {})
 
+  const resetGroupSelection = () => {
+    setSelectedGroup('')
+    setGroupMemberCount(null)
+    setGroupError(null)
+    setLoadingMembers(false)
+  }
+
+  // Fills the eligible-voter box from a group's members. It replaces the box rather
+  // than appending, so the selection and the field always agree; the organizer can
+  // still edit the result by hand afterwards.
+  const handleGroupSelect = async (groupName) => {
+    setSelectedGroup(groupName)
+    setGroupError(null)
+    setGroupMemberCount(null)
+
+    if (!groupName) return
+
+    setLoadingMembers(true)
+    try {
+      const members = await getUsersByGroup(groupName)
+      setEligibleVotersText(members.map((member) => member.external_id).join(', '))
+      setGroupMemberCount(members.length)
+      // The box now holds a list the organizer chose deliberately, so a stale
+      // "we could not load the draft's voters" warning must not suppress it on save.
+      setDraftLoadError(null)
+    } catch (error) {
+      setGroupError(`Failed to load members for “${groupName}”: ${error.message}`)
+    } finally {
+      setLoadingMembers(false)
+    }
+  }
+
   const handleSelectDraft = async (draft) => {
     const loadId = ++draftLoadRef.current
 
@@ -127,6 +172,9 @@ function CreateElection() {
     setDraftLoadError(null)
     setEligibleVotersText('')
     setLoadingDraft(true)
+    // The draft's own saved voters are about to be loaded, so any group shortcut
+    // used on the previous form no longer describes what is in the box.
+    resetGroupSelection()
 
     try {
       const voters = await getEligibleVoters(draft.id)
@@ -157,6 +205,7 @@ function CreateElection() {
     setBallotError(null)
     setDraftLoadError(null)
     setLoadingDraft(false)
+    resetGroupSelection()
   }
 
   const handleSaveDraft = async () => {
@@ -390,6 +439,53 @@ function CreateElection() {
                 </p>
               )}
             </fieldset>
+
+            <div>
+              <label htmlFor="election-group" className={fieldLabel}>
+                Add Voters by Organization{' '}
+                <span className="font-normal text-slate-500">(optional)</span>
+              </label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <select
+                  id="election-group"
+                  value={selectedGroup}
+                  onChange={(e) => handleGroupSelect(e.target.value)}
+                  // Same rule as Save/Create: the draft is still loading into the
+                  // form, so nothing may overwrite the voter box yet.
+                  disabled={loadingMembers || loadingDraft}
+                  className="w-full flex-1 rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
+                >
+                  <option value="">Select an organization</option>
+                  {groups.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-slate-400 sm:whitespace-nowrap">
+                  {loadingMembers
+                    ? 'Loading members...'
+                    : groupMemberCount !== null
+                      ? `${groupMemberCount} member${groupMemberCount === 1 ? '' : 's'} added below`
+                      : ''}
+                </p>
+              </div>
+              {groupError && (
+                <p role="alert" className="mt-2 text-sm text-rose-400">
+                  {groupError}
+                </p>
+              )}
+              {groupMemberCount === 0 && !loadingMembers && (
+                <p className="mt-2 text-sm text-amber-400">
+                  No active voters are registered in this organization.
+                </p>
+              )}
+              <p className="mt-1.5 text-xs text-slate-500">
+                {groups.length === 0
+                  ? 'No organizations available yet — voters set one when they register.'
+                  : 'Replaces the list below with every active voter in the organization. You can still edit it by hand.'}
+              </p>
+            </div>
 
             <div>
               <label htmlFor="election-voters" className={fieldLabel}>

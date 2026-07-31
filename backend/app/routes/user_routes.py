@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import GROUP_MAX_LENGTH, User, UserRole
 from app.schemas.user_schema import UserResponse, UserUpdateRequest
 from app.security.password import hash_password
 from app.security.security import get_current_user
+from app.services.user_service import get_all_group_names, get_users_by_group
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -72,3 +73,57 @@ def updateCurrentUser(
     db.refresh(current_user)
 
     return current_user
+
+
+def _require_group_reader(current_user: User) -> None:
+    """Only organizers and system admins may browse the group directory.
+
+    KNOWN LIMITATION: this is role-based only — any organizer can enumerate every
+    group and read the voters in it, not just groups they have some relationship
+    with. Narrowing that to a real membership/ownership model is deliberately out of
+    scope here and is tracked separately.
+    """
+    if current_user.role not in (UserRole.organizer, UserRole.system_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizers and admins can view groups",
+        )
+
+
+@router.get("/groups", response_model=list[str])
+def getGroupNames(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List the organisation names that have at least one active voter.
+    """
+    _require_group_reader(current_user)
+
+    return get_all_group_names(db)
+
+
+@router.get("/by-group", response_model=list[UserResponse])
+def getUsersByGroupName(
+    group_name: str = Query(..., min_length=1, max_length=GROUP_MAX_LENGTH),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List the active voters in one organisation.
+
+    The name is a query parameter rather than a path segment. Group names are
+    organizer-authored free text that routinely contains '/', '&' and non-ASCII
+    characters, and a '/' in a path segment is a route boundary no amount of
+    percent-encoding reliably survives (proxies and ASGI servers normalise %2F
+    inconsistently). A query parameter has none of that ambiguity.
+
+    Required and bounded to the column width, so an empty or oversized value is a
+    422 naming the field instead of a database error. An unknown group is still an
+    empty list, not the 404 the commented draft raised: the caller is asking "who is
+    in this group", and "nobody" is a real answer the create-election form renders
+    on its own.
+    """
+    _require_group_reader(current_user)
+
+    return get_users_by_group(db, group_name)

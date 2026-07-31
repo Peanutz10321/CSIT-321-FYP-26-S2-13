@@ -8,6 +8,12 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+# One definition of the group-name limit, shared by the column, the registration
+# schema and the lookup query parameter, so a value that validates can always be
+# stored. Changing it means writing a migration for users.group as well.
+GROUP_MAX_LENGTH = 50
+
+
 class UserRole(str, enum.Enum):
     voter = "voter"
     organizer = "organizer"
@@ -33,6 +39,10 @@ class User(Base):
     full_name = Column(String, nullable=True)
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=False)
+    # Optional free-text organisation a voter belongs to, captured at registration.
+    # Indexed because the only reads are "distinct groups" and "members of a group".
+    # Added to the database by Alembic revision 0005_user_group.
+    group = Column(String(GROUP_MAX_LENGTH), nullable=True, index=True)
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

@@ -30,6 +30,7 @@ from alembic.migration import MigrationContext
 
 from app.database import Base
 import app.models  # noqa: F401  (registers all tables on Base.metadata)
+from app.models.user import GROUP_MAX_LENGTH
 from scripts.destructive_test_guard import require_safe_postgres_test_database
 
 
@@ -305,6 +306,98 @@ def test_commitment_rename_is_reversible(upgraded_engine):
     columns = _columns(upgraded_engine, "ballots")
     assert "vote_hash" in columns
     assert "ballot_commitment" not in columns
+
+
+# ---------------------------------------------------------------------------
+# 0005 — users.group
+# ---------------------------------------------------------------------------
+
+
+def _indexes(engine, table: str) -> dict[str, dict]:
+    return {index["name"]: index for index in sa.inspect(engine).get_indexes(table)}
+
+
+def test_migrated_schema_has_the_nullable_group_column(upgraded_engine):
+    columns = {c["name"]: c for c in sa.inspect(upgraded_engine).get_columns("users")}
+
+    assert "group" in columns, "users.group was not created by the migrations"
+
+    group = columns["group"]
+    assert group["nullable"] is True
+    # Must match String(GROUP_MAX_LENGTH) on the model, or a 50-character name that
+    # passes schema validation would still be truncated by the database.
+    assert group["type"].length == GROUP_MAX_LENGTH
+
+
+def test_migrated_schema_has_the_group_lookup_index(upgraded_engine):
+    indexes = _indexes(upgraded_engine, "users")
+
+    assert "ix_users_group" in indexes, "the users.group index is missing"
+
+    index = indexes["ix_users_group"]
+    assert index["column_names"] == ["group"]
+    # Many voters share one organisation; a unique index would reject the second.
+    assert not index["unique"]
+
+
+def test_existing_users_are_left_null_by_the_group_migration(pg_engine):
+    """The column is added to a populated database without touching its rows."""
+    config = _alembic_config()
+    command.upgrade(config, "0004_audit_chain")
+
+    user_id = uuid.uuid4()
+    with pg_engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO users (id, role, status, external_id, username, "
+                "full_name, email, password_hash, created_at, updated_at) VALUES "
+                "(:id, 'voter', 'active', 'V-1', 'u1', 'U One', 'u1@test.com', "
+                "'x', now(), now())"
+            ),
+            {"id": user_id},
+        )
+
+    command.upgrade(config, "head")
+
+    with pg_engine.connect() as connection:
+        row = connection.execute(
+            sa.text('SELECT "group", username FROM users WHERE id = :id'),
+            {"id": user_id},
+        ).one()
+
+    assert row.group is None
+    assert row.username == "u1"  # the rest of the row is untouched
+
+
+def test_group_upgrade_is_idempotent(pg_engine):
+    """Safe where the column and index were already added by hand."""
+    config = _alembic_config()
+    command.upgrade(config, "0004_audit_chain")
+
+    with pg_engine.begin() as connection:
+        connection.execute(sa.text('ALTER TABLE users ADD COLUMN "group" VARCHAR(50)'))
+        connection.execute(sa.text('CREATE INDEX ix_users_group ON users ("group")'))
+
+    command.upgrade(config, "head")  # must not raise
+
+    assert "group" in _columns(pg_engine, "users")
+    assert "ix_users_group" in _indexes(pg_engine, "users")
+
+
+def test_group_downgrade_drops_the_index_and_the_column(upgraded_engine):
+    command.downgrade(_alembic_config(), "0004_audit_chain")
+
+    assert "group" not in _columns(upgraded_engine, "users")
+    assert "ix_users_group" not in _indexes(upgraded_engine, "users")
+
+
+def test_group_downgrade_then_upgrade_restores_the_schema(upgraded_engine):
+    config = _alembic_config()
+    command.downgrade(config, "0004_audit_chain")
+    command.upgrade(config, "head")
+
+    assert "group" in _columns(upgraded_engine, "users")
+    assert "ix_users_group" in _indexes(upgraded_engine, "users")
 
 
 # ---------------------------------------------------------------------------

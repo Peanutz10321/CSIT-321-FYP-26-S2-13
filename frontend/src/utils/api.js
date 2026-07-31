@@ -134,6 +134,19 @@ async function addElectionVoter(electionId, externalId) {
   return addEligibleVoter(electionId, { external_id: externalId })
 }
 
+// Organisation directory. Both routes are organizer/admin only on the backend.
+async function getGroups() {
+  return request('/users/groups')
+}
+
+// A query parameter, not a path segment: group names are free text that can hold
+// '/', '&' and non-ASCII characters, and a percent-encoded '/' inside a path is not
+// reliably preserved across proxies. URLSearchParams encodes the whole value.
+async function getUsersByGroup(groupName) {
+  const params = new URLSearchParams({ group_name: groupName })
+  return request(`/users/by-group?${params.toString()}`)
+}
+
 async function getElectionDetails(electionId) {
   return request(`/elections/${electionId}`)
 }
@@ -247,6 +260,8 @@ export {
   getEligibleVoters,
   addEligibleVoter,
   addElectionVoter,
+  getGroups,
+  getUsersByGroup,
   getElectionDetails,
   getElectionResults,
   updateElection,
