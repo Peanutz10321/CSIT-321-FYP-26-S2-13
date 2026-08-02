@@ -9,6 +9,7 @@ function UpdateAccount() {
     username: '',
     email: '',
     password: '',
+    group: '',
   })
   const [role, setRole] = useState('')
   const [loading, setLoading] = useState(true)
@@ -22,6 +23,7 @@ function UpdateAccount() {
           username: user.username || '',
           email: user.email || '',
           password: '',
+          group: user.group || '',
         })
       })
       .catch((error) => {
@@ -38,12 +40,25 @@ function UpdateAccount() {
 
   const handleSave = async (event) => {
     event.preventDefault()
+
+    // Registration gets this from the browser, because its Save is a real submit
+    // inside a <form>. This page saves from a type="button" click, so minLength on
+    // the input never fires and the rule has to be checked here — otherwise a short
+    // password only fails at the backend, as a raw 422.
+    if (formValues.password.trim() && formValues.password.length < 8) {
+      alert('Password must be at least 8 characters.')
+      return
+    }
+
     setSaving(true)
 
     try {
       const payload = {
         username: formValues.username,
         email: formValues.email,
+        // Always sent, so emptying the box actually leaves the organisation
+        // rather than silently keeping the old one.
+        group: formValues.group.trim(),
       }
 
       if (formValues.password.trim()) {
@@ -114,6 +129,24 @@ function UpdateAccount() {
           </div>
 
           <div>
+            <label htmlFor="group" className={labelClass}>
+              Organization <span className="font-normal text-slate-500">(optional)</span>
+            </label>
+            <Input
+              id="group"
+              name="group"
+              value={formValues.group}
+              onChange={handleInputChange}
+              type="text"
+              maxLength={50}
+              placeholder="Organization"
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              Leave blank to leave your organization.
+            </p>
+          </div>
+
+          <div>
             <label htmlFor="password" className={labelClass}>
               New Password
             </label>
@@ -124,9 +157,13 @@ function UpdateAccount() {
               onChange={handleInputChange}
               type="password"
               autoComplete="new-password"
+              minLength={8}
               placeholder="New Password"
             />
-            <p className="mt-1.5 text-xs text-slate-500">Leave blank to keep your current password.</p>
+            <p className="mt-1.5 text-xs text-slate-500">
+              Leave blank to keep your current password. A new password must be at least
+              8 characters.
+            </p>
           </div>
 
           <div className="border-t border-slate-800 pt-6 sm:flex sm:justify-end">

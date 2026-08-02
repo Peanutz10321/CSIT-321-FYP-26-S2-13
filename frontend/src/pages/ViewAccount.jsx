@@ -53,7 +53,8 @@ function ViewAccount() {
             <AccountRow label={`${roleLabel} Email`}>{user.email || '—'}</AccountRow>
             <AccountRow label="Password">••••••••</AccountRow>
             <AccountRow label="Full Name">{user.full_name || '—'}</AccountRow>
-            <AccountRow label="External ID">{user.external_id || '—'}</AccountRow>
+            <AccountRow label="Organization">{user.group || '—'}</AccountRow>
+            <AccountRow label="Member ID">{user.external_id || '—'}</AccountRow>
           </div>
         )}
       </Card>

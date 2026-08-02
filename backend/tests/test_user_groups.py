@@ -395,3 +395,289 @@ class TestGroupMembersQueryParameter:
         )
 
         assert response.status_code == 403
+
+
+class TestAccountGroupVisibility:
+    """The group is part of a user record wherever one is read back."""
+
+    def test_register_response_returns_the_group(self):
+        voter = register("voter", group="Engineering Club")
+
+        assert voter["group"] == "Engineering Club"
+
+    def test_users_me_returns_the_group_for_a_voter(self):
+        voter = register("voter", group="Engineering Club")
+        token = login(voter["email"])
+
+        response = client.get(f"{USER_BASE}/me", headers=auth_header(token))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["group"] == "Engineering Club"
+
+    def test_users_me_returns_the_group_for_an_organizer(self):
+        organizer = register("organizer", group="Faculty Office")
+        token = login(organizer["email"])
+
+        response = client.get(f"{USER_BASE}/me", headers=auth_header(token))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["group"] == "Faculty Office"
+
+    def test_an_account_without_a_group_reports_null_rather_than_omitting_it(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        body = client.get(f"{USER_BASE}/me", headers=auth_header(token)).json()
+
+        assert "group" in body
+        assert body["group"] is None
+
+
+class TestAccountGroupUpdate:
+    """A user may join, change or leave an organisation from their own account."""
+
+    def test_a_voter_can_set_a_group(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": "Engineering Club"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["group"] == "Engineering Club"
+        assert stored_group(voter["email"]) == "Engineering Club"
+
+    def test_an_organizer_can_set_a_group(self):
+        organizer = register("organizer")
+        token = login(organizer["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": "Faculty Office"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["group"] == "Faculty Office"
+
+    def test_a_group_can_be_changed(self):
+        voter = register("voter", group="Old Club")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": "New Club"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert stored_group(voter["email"]) == "New Club"
+
+    def test_a_blank_group_clears_it(self):
+        voter = register("voter", group="Engineering Club")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": "   "},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["group"] is None
+        # NULL, not "" â€” an empty string would surface as a selectable organisation.
+        assert stored_group(voter["email"]) is None
+
+    def test_an_explicit_null_group_clears_it(self):
+        voter = register("voter", group="Engineering Club")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": None},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert stored_group(voter["email"]) is None
+
+    def test_omitting_the_group_leaves_it_untouched(self):
+        """Updating only the username must not wipe the organisation."""
+        voter = register("voter", group="Engineering Club")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"username": f"renamed_{uuid4().hex[:8]}"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert stored_group(voter["email"]) == "Engineering Club"
+
+    def test_the_group_is_trimmed_on_update(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        client.put(
+            f"{USER_BASE}/me",
+            json={"group": "  Engineering Club  "},
+            headers=auth_header(token),
+        )
+
+        assert stored_group(voter["email"]) == "Engineering Club"
+
+    def test_a_50_character_group_is_accepted(self):
+        voter = register("voter")
+        token = login(voter["email"])
+        name = "G" * 50
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": name},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert stored_group(voter["email"]) == name
+
+    def test_a_51_character_group_is_rejected_and_changes_nothing(self):
+        voter = register("voter", group="Engineering Club")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"group": "G" * 51},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 422, response.text
+        assert stored_group(voter["email"]) == "Engineering Club"
+
+    def test_updating_a_group_makes_the_account_selectable_through_the_directory(
+        self, organizer_token, unique_group
+    ):
+        """The whole point of the field: an organizer can then enrol the account."""
+        voter = register("voter")
+        token = login(voter["email"])
+
+        client.put(
+            f"{USER_BASE}/me",
+            json={"group": unique_group},
+            headers=auth_header(token),
+        )
+
+        members = client.get(
+            f"{USER_BASE}/by-group",
+            params={"group_name": unique_group},
+            headers=auth_header(organizer_token),
+        ).json()
+
+        assert [m["external_id"] for m in members] == [voter["external_id"]]
+
+    def test_leaving_a_group_removes_the_account_from_the_directory(
+        self, organizer_token, unique_group
+    ):
+        voter = register("voter", group=unique_group)
+        token = login(voter["email"])
+
+        client.put(f"{USER_BASE}/me", json={"group": ""}, headers=auth_header(token))
+
+        members = client.get(
+            f"{USER_BASE}/by-group",
+            params={"group_name": unique_group},
+            headers=auth_header(organizer_token),
+        ).json()
+        assert members == []
+
+        groups = client.get(f"{USER_BASE}/groups", headers=auth_header(organizer_token)).json()
+        assert unique_group not in groups
+
+
+class TestAccountPasswordMinimum:
+    """Updating a password obeys the same minimum registration does.
+
+    Without this the registration rule was advisory: an account could be created
+    with a compliant password and immediately lowered to a weaker one.
+    """
+
+    def test_a_password_shorter_than_the_minimum_is_rejected(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"password": "short"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 422, response.text
+
+    def test_a_rejected_password_leaves_the_old_one_working(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        client.put(
+            f"{USER_BASE}/me",
+            json={"password": "short"},
+            headers=auth_header(token),
+        )
+
+        # The original password still logs in, so nothing was half-applied.
+        assert login(voter["email"], "testing123")
+
+    def test_the_registration_minimum_is_the_same_rule(self):
+        """Both endpoints reject exactly the same too-short value."""
+        suffix = uuid4().hex[:8]
+        register_response = client.post(
+            f"{AUTH_BASE}/register",
+            json={
+                "role": "voter",
+                "username": f"voter_{suffix}",
+                "email": f"voter_{suffix}@test.com",
+                "password": "short",
+            },
+        )
+
+        assert register_response.status_code == 422, register_response.text
+
+    def test_an_eight_character_password_is_accepted_and_logs_in(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"password": "12345678"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert login(voter["email"], "12345678")
+
+    def test_a_seven_character_password_is_rejected(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"password": "1234567"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 422, response.text
+
+    def test_omitting_the_password_still_keeps_the_current_one(self):
+        voter = register("voter")
+        token = login(voter["email"])
+
+        response = client.put(
+            f"{USER_BASE}/me",
+            json={"username": f"renamed_{uuid4().hex[:8]}"},
+            headers=auth_header(token),
+        )
+
+        assert response.status_code == 200, response.text
+        assert login(voter["email"], "testing123")

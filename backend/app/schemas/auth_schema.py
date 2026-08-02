@@ -3,6 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import GROUP_MAX_LENGTH
+from app.security.password import PASSWORD_MIN_LENGTH
 
 
 class RegisterRequest(BaseModel):
@@ -14,7 +15,7 @@ class RegisterRequest(BaseModel):
     # "missing field" message rather than a schema 422; a supplied value is
     # length-checked. The role is deliberately a plain string, not a Literal, so
     # the route can answer 403 for system_admin instead of a blanket 422.
-    password: Annotated[str, Field(min_length=8)] | None = None
+    password: Annotated[str, Field(min_length=PASSWORD_MIN_LENGTH)] | None = None
     role: str = "voter"
     # Optional. Lets an organizer later add every member of an organisation at once.
     # Length-checked here so an oversized value is a 422 describing the field, rather
