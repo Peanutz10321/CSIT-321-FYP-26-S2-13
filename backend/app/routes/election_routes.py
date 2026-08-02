@@ -468,12 +468,6 @@ def getElectionDetails(
         .first()
     )
 
-    if not election:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Election not found",
-        )
-
     if current_user.role == UserRole.organizer:
         if not election:
             raise HTTPException(
