@@ -119,7 +119,7 @@ function ElectionResults() {
 
       {/* Summary highlights */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatTile label="Total Ballots Cast:">
+        <StatTile label="Total Votes Cast:">
           <span className="text-3xl font-semibold tracking-tight">
             {resultsError ? '—' : totalVotes}
           </span>

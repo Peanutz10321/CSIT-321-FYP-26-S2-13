@@ -100,7 +100,7 @@ function AdminViewUser() {
               <MetaRow label="Username">{user.username || '—'}</MetaRow>
               <MetaRow label="Email">{user.email || '—'}</MetaRow>
               <MetaRow label="Full Name">{user.full_name || '—'}</MetaRow>
-              <MetaRow label="External ID">{user.external_id || '—'}</MetaRow>
+              <MetaRow label="Member ID">{user.external_id || '—'}</MetaRow>
               <MetaRow label="Account Type">
                 <span className="capitalize">{user.role?.replace('_', ' ') || '—'}</span>
               </MetaRow>

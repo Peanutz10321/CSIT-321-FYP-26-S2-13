@@ -120,7 +120,7 @@ function VoteReceipt() {
         </p>
 
         <div className="mt-5 text-sm">
-          <ReceiptField label="External ID">{currentUser?.external_id ?? '—'}</ReceiptField>
+          <ReceiptField label="Member ID">{currentUser?.external_id ?? '—'}</ReceiptField>
           <ReceiptField label="Election Title">{election.title}</ReceiptField>
           <ReceiptField label="Election Candidates">{candidateNames}</ReceiptField>
           <ReceiptField label="Election Commence">

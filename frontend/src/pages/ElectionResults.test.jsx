@@ -74,7 +74,7 @@ describe('ElectionResults turnout and labels', () => {
   it('displays turnout from the backend total_votes, never the sum of candidate totals', async () => {
     await renderResults(multiElection, multiResults)
 
-    const turnoutRow = row('Total Ballots Cast')
+    const turnoutRow = row('Total Votes Cast')
     // Backend turnout is 3; the candidate totals sum to 4 and must not be shown.
     expect(turnoutRow).toHaveTextContent('3')
     expect(turnoutRow).not.toHaveTextContent('4')
@@ -103,7 +103,7 @@ describe('ElectionResults turnout and labels', () => {
       results: multiResults.results.map((r) => ({ ...r, total_votes: 0 })),
     })
 
-    expect(row('Total Ballots Cast')).toHaveTextContent('2')
+    expect(row('Total Votes Cast')).toHaveTextContent('2')
     expect(row('Winner')).toHaveTextContent('—')
   })
 })
