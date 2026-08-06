@@ -62,3 +62,60 @@ describe('Login redirects by new role', () => {
     expect(navigateMock).not.toHaveBeenCalledWith('/teacher-dashboard')
   })
 })
+
+describe('Login rejects incomplete credentials', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows one message for a blank email, without calling the API', async () => {
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Please provide a valid email and password.',
+    )
+    expect(loginUser).not.toHaveBeenCalled()
+  })
+
+  it('shows the same message for a blank password', async () => {
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'x@test.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Please provide a valid email and password.',
+    )
+    expect(loginUser).not.toHaveBeenCalled()
+  })
+
+  it('replaces the raw validator text when the backend rejects the address', async () => {
+    // An address the browser accepts but the backend's EmailStr does not.
+    const rejected = new Error('value is not a valid email address: The part after the @-sign is not valid.')
+    rejected.status = 422
+    loginUser.mockRejectedValue(rejected)
+
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Please provide a valid email and password.',
+    )
+  })
+
+  it('still surfaces the server message for a failed credential check', async () => {
+    const rejected = new Error('Invalid email or password')
+    rejected.status = 401
+    loginUser.mockRejectedValue(rejected)
+
+    renderLogin()
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'x@test.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Login' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password')
+  })
+})

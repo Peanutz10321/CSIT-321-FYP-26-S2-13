@@ -46,7 +46,9 @@ async function request(path, options = {}) {
     const message = Array.isArray(detail)
       ? detail.map((e) => e.msg || e.message || JSON.stringify(e)).join('; ')
       : detail || payload?.message || response.statusText || 'Request failed'
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
 
   return payload

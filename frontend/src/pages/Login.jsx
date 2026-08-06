@@ -15,6 +15,7 @@ function LockIcon({ className = 'h-4 w-4' }) {
 const inputClass =
   'block w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40'
 const labelClass = 'mb-2 block text-sm font-medium text-slate-200'
+const INVALID_CREDENTIALS_INPUT = 'Please provide a valid email and password.'
 const primaryButtonClass =
   'inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60'
 
@@ -28,8 +29,14 @@ function Login() {
     event.preventDefault()
     setError('')
 
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !password) {
+      setError(INVALID_CREDENTIALS_INPUT)
+      return
+    }
+
     try {
-      const response = await loginUser(email, password)
+      const response = await loginUser(trimmedEmail, password)
       const token = response.access_token
 
       if (!token) {
@@ -51,6 +58,10 @@ function Login() {
         setError('Login succeeded, but user role is not recognized.')
       }
     } catch (err) {
+      if (err.status === 422) {
+        setError(INVALID_CREDENTIALS_INPUT)
+        return
+      }
       setError(err.message || 'Login failed. Please check your email and password.')
     }
   }
