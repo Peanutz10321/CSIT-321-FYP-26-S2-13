@@ -650,3 +650,123 @@ def test_admin_organizer_provisioning_endpoint_is_gone(client, fake_db):
     # the provisioning product path is unavailable, and nothing was created.
     assert response.status_code in (404, 405)
     assert all(user.role != UserRole.organizer for user in fake_db.users)
+
+
+def test_register_trims_whitespace_around_username_and_email(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "  padded  ",
+            "email": "  padded@test.com  ",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["username"] == "padded"
+    assert body["email"] == "padded@test.com"
+
+
+def test_register_padded_username_cannot_duplicate_an_existing_account(client):
+    register_voter(client)
+
+    # The uniqueness queries are exact matches, so an untrimmed "  voter  " would
+    # slip past them and create a second, visually identical account.
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "  voter  ",
+            "email": "different@test.com",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"].lower()
+
+
+def test_register_padded_email_cannot_duplicate_an_existing_account(client):
+    register_voter(client)
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "different",
+            "email": "  voter@test.com  ",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"].lower()
+
+
+def test_register_rejects_a_whitespace_only_username(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "username": "   ",
+            "email": "spacey@test.com",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "missing field" in response.json()["detail"].lower()
+
+
+def test_update_trims_whitespace_around_the_username(client):
+    register_voter(client)
+    token = login(client).json()["access_token"]
+
+    response = client.put(
+        "/users/me",
+        headers=auth_headers(token),
+        json={"username": "  renamed  ", "email": "voter@test.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "renamed"
+
+
+def test_update_rejects_a_whitespace_only_username(client):
+    register_voter(client)
+    token = login(client).json()["access_token"]
+
+    # min_length=1 on the schema counts the spaces, so only the route can catch it.
+    response = client.put(
+        "/users/me",
+        headers=auth_headers(token),
+        json={"username": "   ", "email": "voter@test.com"},
+    )
+
+    assert response.status_code == 400
+    assert "missing field" in response.json()["detail"].lower()
+
+
+def test_update_padded_username_cannot_duplicate_another_account(client):
+    register_voter(client)
+    client.post(
+        "/auth/register",
+        json={
+            "username": "taken",
+            "email": "taken@test.com",
+            "password": "password123",
+            "role": "voter",
+        },
+    )
+    token = login(client).json()["access_token"]
+
+    response = client.put(
+        "/users/me",
+        headers=auth_headers(token),
+        json={"username": "  taken  ", "email": "voter@test.com"},
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"].lower()

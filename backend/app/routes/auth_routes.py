@@ -30,16 +30,21 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     ``organizer_created`` audit event, committed atomically with the account.
     """
 
-    if not request.username or not request.username.strip() \
-            or not request.email or not request.email.strip() \
-            or not request.password:
+    # Normalised once, up front, and used for every check and for the stored row.
+    # Comparing or storing the raw value would let "  bob  " register alongside an
+    # existing "bob" — the uniqueness queries below are exact matches, so padding
+    # slips past them and two visually identical accounts end up in the table.
+    username = (request.username or "").strip()
+    email = (request.email or "").strip()
+
+    if not username or not email or not request.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing field detected. Please key in again.",
         )
 
     try:
-        validate_email(request.email, check_deliverability=False)
+        validate_email(email, check_deliverability=False)
     except EmailNotValidError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,14 +69,14 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     role = UserRole(request.role)
 
     # Check duplicate email
-    existing_email = db.query(User).filter(User.email == request.email).first()
+    existing_email = db.query(User).filter(User.email == email).first()
     if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account already exists.",
         )
 
-    existing_username = db.query(User).filter(User.username == request.username).first()
+    existing_username = db.query(User).filter(User.username == username).first()
     if existing_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -81,8 +86,8 @@ def registerUser(request: RegisterRequest, db: Session = Depends(get_db)):
     new_user = build_user_account(
         db,
         role=role,
-        username=request.username,
-        email=request.email,
+        username=username,
+        email=email,
         password=request.password,
         group=request.group,
     )

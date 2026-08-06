@@ -34,10 +34,25 @@ def updateCurrentUser(
     User can update username, email, and password.
     """
 
-    if request.username and request.username != current_user.username:
+    # Trimmed for the same reason as registration: the schema's min_length=1 counts
+    # spaces, so an untrimmed value would both store padding and miss the exact-match
+    # uniqueness check below. The email needs no equivalent — EmailStr normalises
+    # surrounding whitespace away before the field is ever read.
+    if request.username is not None:
+        username = request.username.strip()
+
+        if not username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing field detected. Please key in again.",
+            )
+    else:
+        username = None
+
+    if username and username != current_user.username:
         existing_username = (
             db.query(User)
-            .filter(User.username == request.username)
+            .filter(User.username == username)
             .filter(User.id != current_user.id)
             .first()
         )
@@ -48,7 +63,7 @@ def updateCurrentUser(
                 detail="Username already exists",
             )
 
-        current_user.username = request.username
+        current_user.username = username
 
     if request.email and request.email != current_user.email:
         existing_email = (

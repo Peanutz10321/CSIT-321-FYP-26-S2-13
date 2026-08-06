@@ -202,3 +202,96 @@ describe('UpdateAccount edits the organization', () => {
     })
   })
 })
+
+describe('UpdateAccount rejects a missing username or email', () => {
+  const MESSAGE = 'Missing field or invalid input detected. Please key in again'
+  const usernameField = () => screen.getByLabelText('Username')
+  const emailField = () => screen.getByLabelText(/Email/)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    updateCurrentUser.mockResolvedValue(account())
+    getCurrentUser.mockResolvedValue(account())
+  })
+
+  it('blocks a blank username before it reaches the backend', async () => {
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(usernameField()).toHaveValue('voter1'))
+    fireEvent.change(usernameField(), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(MESSAGE))
+    expect(updateCurrentUser).not.toHaveBeenCalled()
+  })
+
+  it('blocks a blank email', async () => {
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(emailField()).toHaveValue('voter1@test.com'))
+    fireEvent.change(emailField(), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(MESSAGE))
+    expect(updateCurrentUser).not.toHaveBeenCalled()
+  })
+
+  it('treats a whitespace-only username as blank', async () => {
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(usernameField()).toHaveValue('voter1'))
+    // min_length=1 on the backend counts spaces, so this would otherwise be stored.
+    fireEvent.change(usernameField(), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(MESSAGE))
+    expect(updateCurrentUser).not.toHaveBeenCalled()
+  })
+
+  it('trims the username and email before sending them', async () => {
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(usernameField()).toHaveValue('voter1'))
+    fireEvent.change(usernameField(), { target: { value: '  voter2  ' } })
+    fireEvent.change(emailField(), { target: { value: '  voter2@test.com  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(updateCurrentUser).toHaveBeenCalledWith(
+        expect.objectContaining({ username: 'voter2', email: 'voter2@test.com' }),
+      ),
+    )
+  })
+
+  it('replaces the raw validator text when the backend rejects the email', async () => {
+    // Save is a plain button outside a <form>, so type="email" never blocks this.
+    const rejected = new Error('value is not a valid email address: An email address must have an @-sign.')
+    rejected.status = 422
+    updateCurrentUser.mockRejectedValue(rejected)
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(emailField()).toHaveValue('voter1@test.com'))
+    fireEvent.change(emailField(), { target: { value: 'not-an-email' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith(MESSAGE))
+  })
+
+  it('still reports other save failures with the server message', async () => {
+    const rejected = new Error('Username already exists')
+    rejected.status = 400
+    updateCurrentUser.mockRejectedValue(rejected)
+    renderPage(UpdateAccount)
+
+    await waitFor(() => expect(usernameField()).toHaveValue('voter1'))
+    fireEvent.change(usernameField(), { target: { value: 'taken' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(window.alert).toHaveBeenCalledWith(
+        'Failed to update account: Username already exists',
+      ),
+    )
+  })
+})

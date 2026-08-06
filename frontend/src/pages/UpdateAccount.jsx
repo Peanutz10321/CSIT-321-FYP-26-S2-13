@@ -3,6 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { getCurrentUser, updateCurrentUser } from '../utils/api'
 import { Button, Card, Input, LoadingState, PageHeader, PageShell } from '../components/ui.jsx'
 
+// Covers a field left empty and one the backend's schema rejects. Both are the
+// same mistake to the account holder, and neither should surface the validator's
+// own wording.
+const INVALID_ACCOUNT_INPUT = 'Missing field or invalid input detected. Please key in again'
+
 function UpdateAccount() {
   const navigate = useNavigate()
   const [formValues, setFormValues] = useState({
@@ -41,6 +46,19 @@ function UpdateAccount() {
   const handleSave = async (event) => {
     event.preventDefault()
 
+    // Trimmed, so a box holding only spaces counts as empty. Without this the
+    // username passes the backend's min_length=1 and is stored as whitespace.
+    const username = formValues.username.trim()
+    const email = formValues.email.trim()
+
+    // Neither field is optional. Save is a type="button" outside a <form>, so the
+    // browser runs no validation of its own here — not the empty check, and not
+    // type="email" either — and anything wrong reaches the backend as a raw 422.
+    if (!username || !email) {
+      alert(INVALID_ACCOUNT_INPUT)
+      return
+    }
+
     // Registration gets this from the browser, because its Save is a real submit
     // inside a <form>. This page saves from a type="button" click, so minLength on
     // the input never fires and the rule has to be checked here — otherwise a short
@@ -54,8 +72,8 @@ function UpdateAccount() {
 
     try {
       const payload = {
-        username: formValues.username,
-        email: formValues.email,
+        username,
+        email,
         // Always sent, so emptying the box actually leaves the organisation
         // rather than silently keeping the old one.
         group: formValues.group.trim(),
@@ -68,7 +86,10 @@ function UpdateAccount() {
       await updateCurrentUser(payload)
       navigate(-1)
     } catch (error) {
-      alert(`Failed to update account: ${error.message}`)
+      // A 422 is the schema refusing a field — a malformed email being the case the
+      // guard above cannot catch. Same mistake as a blank box, so the same wording.
+      if (error.status === 422) alert(INVALID_ACCOUNT_INPUT)
+      else alert(`Failed to update account: ${error.message}`)
     } finally {
       setSaving(false)
     }
