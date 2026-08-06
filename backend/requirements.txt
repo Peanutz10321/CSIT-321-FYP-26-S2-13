@@ -20,7 +20,7 @@ cffi==2.1.0
     # via cryptography
 click==8.4.2
     # via uvicorn
-cryptography==49.0.0
+cryptography==50.0.0
     # via python-jose
 dnspython==2.8.0
     # via email-validator
