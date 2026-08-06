@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 // Internal app UI kit — the shared visual pattern for signed-in pages.
 //
 // It matches the public Landing/Login/Register language: a slate-950 canvas,
@@ -138,6 +140,167 @@ export function Textarea({ className = '', ...props }) {
       className={`block w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 placeholder-slate-500 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${className}`}
       {...props}
     />
+  )
+}
+
+// A select-only combobox: a text box that filters a list of allowed values.
+//
+// Typed text is a search term, never a value. `onChange` only ever fires with an
+// exact member of `options`, or '' when the box is cleared, so a caller can treat
+// it exactly like the <select> it replaces. Anything half-typed is discarded when
+// the field loses focus.
+export function Combobox({
+  id,
+  value,
+  onChange,
+  options,
+  placeholder = 'Search…',
+  disabled = false,
+  emptyMessage = 'No matches',
+  describedBy,
+  // Half a row, so a sixth match is visibly cut off and the list reads as scrollable
+  // rather than looking like it ends at five.
+  visibleRows = 5.5,
+}) {
+  // The search term while one is being typed, and null the rest of the time. Null
+  // means "show the committed value", so the box follows `value` for free when the
+  // selection is changed from outside — by a reset, or by loading another record —
+  // with no state to keep in sync.
+  const [search, setSearch] = useState(null)
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
+
+  const listId = `${id}-listbox`
+  const optionId = (index) => `${id}-option-${index}`
+  const text = search ?? value
+
+  // An untouched selection lists everything, so reopening the box behaves like the
+  // dropdown it replaces instead of filtering down to the one item already chosen.
+  const needle = (search ?? '').trim().toLowerCase()
+  const matches = needle
+    ? options.filter((option) => option.toLowerCase().includes(needle))
+    : options
+
+  // Keeps the highlighted row visible when arrowing past the scroll edge. Guarded
+  // because jsdom does not implement scrollIntoView.
+  useEffect(() => {
+    if (!open) return
+    document.getElementById(optionId(activeIndex))?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, activeIndex]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (option) => {
+    setOpen(false)
+    setActiveIndex(0)
+    setSearch(null)
+    // Re-picking the current value is not a change, matching how a <select> stays
+    // silent when the already-selected option is chosen again.
+    if (option !== value) onChange(option)
+  }
+
+  const handleChange = (event) => {
+    setSearch(event.target.value)
+    setActiveIndex(0)
+    setOpen(true)
+  }
+
+  const handleBlur = () => {
+    setOpen(false)
+    setActiveIndex(0)
+    // An emptied box clears the selection. Anything else left half-typed was only
+    // ever a search term, so dropping it restores the committed value.
+    if (search !== null && !search.trim() && value) onChange('')
+    setSearch(null)
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      if (!open) {
+        setOpen(true)
+        return
+      }
+      setActiveIndex((index) => Math.min(index + 1, matches.length - 1))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveIndex((index) => Math.max(index - 1, 0))
+    } else if (event.key === 'Enter') {
+      if (open && matches[activeIndex]) {
+        event.preventDefault()
+        commit(matches[activeIndex])
+      }
+    } else if (event.key === 'Escape') {
+      setOpen(false)
+      setActiveIndex(0)
+      setSearch(null)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type="text"
+        role="combobox"
+        autoComplete="off"
+        value={text}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && matches.length ? optionId(activeIndex) : undefined}
+        aria-describedby={describedBy}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onFocus={() => setOpen(true)}
+        onBlur={handleBlur}
+        className={`block w-full rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 pr-10 text-slate-100 placeholder-slate-500 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60`}
+      />
+      <span
+        className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-500"
+        aria-hidden="true"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          // The press must not blur the input before the click lands, or the
+          // blur handler would revert the text and the choice would be lost.
+          onMouseDown={(event) => event.preventDefault()}
+          // A row is py-2 (1rem) around a text-sm line (1.25rem); the extra 0.5rem is
+          // the list's own py-1. Set as a style rather than a Tailwind
+          // class because the class name would have to be built at runtime, which
+          // the JIT compiler cannot see.
+          style={{ maxHeight: `calc(${visibleRows} * 2.25rem + 0.5rem)` }}
+          className="absolute z-20 mt-1 w-full overflow-auto rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl shadow-slate-950/60"
+        >
+          {matches.length === 0 ? (
+            <li className="px-4 py-2 text-sm text-slate-500">{emptyMessage}</li>
+          ) : (
+            matches.map((option, index) => (
+              <li
+                key={option}
+                id={optionId(index)}
+                role="option"
+                aria-selected={option === value}
+                onClick={() => commit(option)}
+                onMouseEnter={() => setActiveIndex(index)}
+                className={`cursor-pointer px-4 py-2 text-sm ${
+                  index === activeIndex ? 'bg-blue-600/20 text-blue-200' : 'text-slate-200'
+                }`}
+              >
+                {option}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
   )
 }
 

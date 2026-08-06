@@ -599,6 +599,15 @@ describe('CreateElection organization selector', () => {
     screen.getByPlaceholderText('Comma or newline separated external IDs')
   const groupPicker = () => screen.getByLabelText(/Add Voters by Organization/)
 
+  // The picker is a search combobox: typing only filters, and the choice is
+  // committed by picking a row. `search` covers the case where the text typed is
+  // not the start of the name being matched.
+  const chooseGroup = async (name, search = name) => {
+    fireEvent.focus(groupPicker())
+    fireEvent.change(groupPicker(), { target: { value: search } })
+    fireEvent.click(await screen.findByRole('option', { name }))
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(window, 'alert').mockImplementation(() => {})
@@ -611,11 +620,7 @@ describe('CreateElection organization selector', () => {
     ])
     renderCreate([], ['Engineering Club', 'Chess Club'])
 
-    await waitFor(() =>
-      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
-    )
-
-    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await chooseGroup('Engineering Club')
 
     await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001, VOTER-002'))
     expect(getUsersByGroup).toHaveBeenCalledWith('Engineering Club')
@@ -626,11 +631,8 @@ describe('CreateElection organization selector', () => {
     createElection.mockResolvedValue({ id: 'e-new' })
     renderCreate([], ['Engineering Club'])
 
-    await waitFor(() =>
-      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
-    )
     fillBasics({ voters: '' })
-    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await chooseGroup('Engineering Club')
     await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
@@ -655,7 +657,7 @@ describe('CreateElection organization selector', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Draft G' }))
     await waitFor(() => expect(votersBox()).toHaveValue('OLD-1'))
 
-    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await chooseGroup('Engineering Club')
     await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001, VOTER-002'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Election Draft' }))
@@ -700,7 +702,7 @@ describe('CreateElection organization selector', () => {
       /Could not load this draft.s eligible voters/,
     )
 
-    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await chooseGroup('Engineering Club')
     await waitFor(() => expect(votersBox()).toHaveValue('VOTER-001'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Election Draft' }))
@@ -718,14 +720,100 @@ describe('CreateElection organization selector', () => {
     getUsersByGroup.mockRejectedValue(new Error('boom'))
     renderCreate([], ['Engineering Club'])
 
-    await waitFor(() =>
-      expect(screen.getByRole('option', { name: 'Engineering Club' })).toBeInTheDocument(),
-    )
     fireEvent.change(votersBox(), { target: { value: 'TYPED-1' } })
-    fireEvent.change(groupPicker(), { target: { value: 'Engineering Club' } })
+    await chooseGroup('Engineering Club')
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Failed to load members/)
     expect(votersBox()).toHaveValue('TYPED-1')
+  })
+
+  it('typing filters the organizations by substring, not just by prefix', async () => {
+    renderCreate([], ['Faculty of Science', 'Chess Club', 'Data Science Society'])
+
+    fireEvent.focus(groupPicker())
+    fireEvent.change(groupPicker(), { target: { value: 'scien' } })
+
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2))
+    expect(screen.getByRole('option', { name: 'Faculty of Science' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Data Science Society' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Chess Club' })).not.toBeInTheDocument()
+  })
+
+  it('matches regardless of case', async () => {
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    renderCreate([], ['Engineering Club'])
+
+    await chooseGroup('Engineering Club', 'ENGIN')
+
+    await waitFor(() => expect(getUsersByGroup).toHaveBeenCalledWith('Engineering Club'))
+  })
+
+  it('can be driven by keyboard alone: arrow to a match, Enter to choose it', async () => {
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    renderCreate([], ['Chess Club', 'Engineering Club'])
+
+    fireEvent.focus(groupPicker())
+    fireEvent.change(groupPicker(), { target: { value: 'club' } })
+    await screen.findByRole('option', { name: 'Engineering Club' })
+
+    fireEvent.keyDown(groupPicker(), { key: 'ArrowDown' })
+    fireEvent.keyDown(groupPicker(), { key: 'Enter' })
+
+    await waitFor(() => expect(getUsersByGroup).toHaveBeenCalledWith('Engineering Club'))
+    expect(groupPicker()).toHaveValue('Engineering Club')
+  })
+
+  it('Escape abandons the search and restores the committed organization', async () => {
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    renderCreate([], ['Engineering Club', 'Chess Club'])
+
+    await chooseGroup('Engineering Club')
+    await waitFor(() => expect(groupPicker()).toHaveValue('Engineering Club'))
+
+    fireEvent.change(groupPicker(), { target: { value: 'Chess' } })
+    fireEvent.keyDown(groupPicker(), { key: 'Escape' })
+
+    expect(groupPicker()).toHaveValue('Engineering Club')
+    expect(getUsersByGroup).toHaveBeenCalledTimes(1)
+  })
+
+  it('a search that matches nothing says so and selects nothing', async () => {
+    renderCreate([], ['Engineering Club'])
+
+    fireEvent.focus(groupPicker())
+    fireEvent.change(groupPicker(), { target: { value: 'zzz' } })
+
+    expect(await screen.findByText('No organizations match that search')).toBeInTheDocument()
+    expect(getUsersByGroup).not.toHaveBeenCalled()
+  })
+
+  it('typed text that is never picked is discarded, and the voter box untouched', async () => {
+    renderCreate([], ['Engineering Club'])
+
+    fireEvent.change(votersBox(), { target: { value: 'TYPED-1' } })
+    fireEvent.focus(groupPicker())
+    fireEvent.change(groupPicker(), { target: { value: 'Engineer' } })
+    fireEvent.blur(groupPicker())
+
+    // Free text is a search term, not a selection.
+    await waitFor(() => expect(groupPicker()).toHaveValue(''))
+    expect(getUsersByGroup).not.toHaveBeenCalled()
+    expect(votersBox()).toHaveValue('TYPED-1')
+  })
+
+  it('switching to a draft clears the organization shown in the picker', async () => {
+    getUsersByGroup.mockResolvedValue([{ external_id: 'VOTER-001' }])
+    getEligibleVoters.mockResolvedValue([{ voter_external_id: 'OLD-1' }])
+    renderCreate([groupDraft], ['Engineering Club'])
+
+    await chooseGroup('Engineering Club')
+    await waitFor(() => expect(groupPicker()).toHaveValue('Engineering Club'))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft G' }))
+
+    // The draft brought its own voters, so the box must not still name a group.
+    await waitFor(() => expect(votersBox()).toHaveValue('OLD-1'))
+    expect(groupPicker()).toHaveValue('')
   })
 
   it('an unavailable group directory leaves the rest of the form usable', async () => {

@@ -10,7 +10,7 @@ import {
   getUsersByGroup,
   updateElection,
 } from '../utils/api'
-import { Button, Card, Input, PageHeader, PageShell, Textarea } from '../components/ui.jsx'
+import { Button, Card, Combobox, Input, PageHeader, PageShell, Textarea } from '../components/ui.jsx'
 
 function CreateElection() {
   const navigate = useNavigate()
@@ -446,22 +446,20 @@ function CreateElection() {
                 <span className="font-normal text-slate-500">(optional)</span>
               </label>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <select
-                  id="election-group"
-                  value={selectedGroup}
-                  onChange={(e) => handleGroupSelect(e.target.value)}
-                  // Same rule as Save/Create: the draft is still loading into the
-                  // form, so nothing may overwrite the voter box yet.
-                  disabled={loadingMembers || loadingDraft}
-                  className="w-full flex-1 rounded-lg border border-slate-700 bg-slate-950/60 px-4 py-2.5 text-slate-100 transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
-                >
-                  <option value="">Select an organization</option>
-                  {groups.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-full flex-1">
+                  <Combobox
+                    id="election-group"
+                    value={selectedGroup}
+                    onChange={handleGroupSelect}
+                    options={groups}
+                    placeholder="Search organizations"
+                    emptyMessage="No organizations match that search"
+                    describedBy="election-group-hint"
+                    // Same rule as Save/Create: the draft is still loading into the
+                    // form, so nothing may overwrite the voter box yet.
+                    disabled={loadingMembers || loadingDraft}
+                  />
+                </div>
                 <p className="text-sm text-slate-400 sm:whitespace-nowrap">
                   {loadingMembers
                     ? 'Loading members...'
@@ -480,7 +478,7 @@ function CreateElection() {
                   No active voters are registered in this organization.
                 </p>
               )}
-              <p className="mt-1.5 text-xs text-slate-500">
+              <p id="election-group-hint" className="mt-1.5 text-xs text-slate-500">
                 {groups.length === 0
                   ? 'No organizations available yet — voters set one when they register.'
                   : 'Replaces the list below with every active voter in the organization. You can still edit it by hand.'}
