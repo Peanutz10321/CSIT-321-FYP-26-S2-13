@@ -69,12 +69,6 @@ def updateCurrentUser(
     if request.password:
         current_user.password_hash = hash_password(request.password)
 
-    # An account holder may join, change or leave an organisation. Blank and
-    # whitespace-only input becomes NULL, exactly as at registration, so leaving a
-    # group cannot leave an empty string behind that would show up as a selectable
-    # organisation. Only a request that actually carries the field touches it —
-    # model_fields_set is what separates "clear this" from "I did not mention it",
-    # since None means both otherwise.
     if "group" in request.model_fields_set:
         current_user.group = (request.group or "").strip() or None
 
