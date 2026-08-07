@@ -21,7 +21,9 @@ cffi==2.1.0
 click==8.4.2
     # via uvicorn
 cryptography==50.0.0
-    # via python-jose
+    # via
+    #   -r requirements.in
+    #   python-jose
 dnspython==2.8.0
     # via email-validator
 ecdsa==0.19.2

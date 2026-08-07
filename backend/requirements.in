@@ -29,3 +29,10 @@ python-jose[cryptography]
 
 # Paillier homomorphic encryption
 phe
+
+# Fernet, used directly by app/security/keystore.py to wrap election private
+# keys. Listed here even though python-jose[cryptography] above already pulls it
+# in: a direct import must not depend on another package's optional extra, which
+# could be dropped or renamed upstream without warning. Declaring it also makes
+# the `# via` annotation in requirements.txt tell the truth.
+cryptography
