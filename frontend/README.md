@@ -1,16 +1,78 @@
-# React + Vite
+# Frontend — React + Vite voter/organizer/admin UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is a navigation page. The full setup and onboarding guide lives in the
+[root readme](../readme.md); it is not duplicated here.
 
-Currently, two official plugins are available:
+React 19, React Router 7, Tailwind CSS 3, built with Vite 8. It is a single-page
+app that talks to the FastAPI backend over JSON with a JWT bearer token — the
+backend does all encryption; no cryptography runs in the browser.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Getting started
 
-## React Compiler
+The frontend needs the backend running to be useful. See
+[Running locally](../readme.md#running-locally) for the full sequence.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+cd frontend
+npm ci          # lockfile is committed; prefer this over `npm install`
+npm run dev     # http://localhost:5173
+```
 
-## Expanding the ESLint configuration
+Open <http://localhost:5173>. The backend's port (8000) serves the API and its
+Swagger docs, not this UI.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Configuration
+
+One variable, `VITE_API_BASE_URL`, documented in
+[Configuration → Frontend](../readme.md#frontend) and in
+[`.env.example`](.env.example).
+
+- **Development:** optional. Falls back to `http://localhost:8000` when unset.
+  Copy `.env.example` to `.env.local` if your backend runs elsewhere.
+- **Production build:** required, and must be HTTPS. The build **aborts** rather
+  than shipping a bundle pointing at localhost.
+
+Vite inlines `VITE_*` at build time, so a bundle carries whatever value was set
+when it was built. There is no runtime override.
+
+If the UI loads but every request fails, the usual cause is the backend's
+`CORS_ALLOWED_ORIGINS`, not this variable — see
+[Common startup problems](../readme.md#common-startup-problems).
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Dev server with HMR on port 5173 |
+| `npm test` | Vitest run (React Testing Library, jsdom) |
+| `npm run test:watch` | Vitest in watch mode |
+| `npm run lint` | ESLint |
+| `npm run audit` | `better-npm-audit` at `--level high` — the CI gate |
+| `npm run build` | Production build; requires an HTTPS `VITE_API_BASE_URL` |
+| `npm run preview` | Serve a built bundle locally |
+
+Inline assignment is bash-only; set the variable first on Windows.
+
+```bash
+VITE_API_BASE_URL=https://api.example.edu npm run build      # bash
+```
+
+```powershell
+$env:VITE_API_BASE_URL = "https://api.example.edu"           # PowerShell
+npm run build
+```
+
+## Layout
+
+```
+src/
+  components/      # shared UI primitives
+  pages/           # route components + co-located *.test.jsx
+  utils/           # api.js, apiConfig.js + tests
+  test/setup.js    # Vitest setup
+eslint.config.js
+vite.config.js     # includes the production API-URL build guard
+```
+
+All request URLs are built through `buildApiUrl()` in `src/utils/apiConfig.js`; no
+component constructs a backend URL of its own.

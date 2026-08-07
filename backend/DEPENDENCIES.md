@@ -34,6 +34,17 @@ pip-compile --strip-extras --upgrade-package fastapi requirements.in
 Avoid bare `--upgrade`: it moves everything at once and makes a failure hard to
 attribute.
 
+> **Regenerate on Linux/macOS, not Windows.** `pip-compile` resolves for the
+> platform it runs on and does not emit environment markers, so a Windows run adds
+> `colorama` (a `platform_system == "Windows"` dependency of `click`) to the
+> production set. The committed file is generated on a POSIX platform, matching CI.
+> If you must compile on Windows, drop any platform-only additions before
+> committing, or the pinned production set stops describing what actually deploys.
+>
+> `pip-tools` 7.6.0 also reaches into pip internals and fails against pip 26.x with
+> `ImportError: cannot import name 'stdlib_pkgs'`. Pin pip to 25.x in the
+> environment you compile from.
+
 ### Installing
 
 ```bash
@@ -47,14 +58,20 @@ pip install -r requirements.txt -r requirements-dev.txt  # development and CI
 
 ```bash
 cd backend
-pip-audit -r requirements.txt --strict
+pip-audit -r requirements.txt --strict --ignore-vuln PYSEC-2026-1325
 ```
+
+This is the exact command CI runs. Without `--ignore-vuln` it exits non-zero on the
+`ecdsa` advisory below, which has no published fix — so the flag is required for the
+command to be usable locally, not an optional extra. Do **not** lower `--strict` or
+the severity threshold instead: that would hide unrelated findings too, whereas an
+explicit advisory ID suppresses exactly one and stays visible in review.
 
 Audits what actually ships. The dev file is excluded on purpose: test and audit
 tooling is not deployed, and including it would report findings that cannot
 affect the running service.
 
-**One finding is currently suppressed in CI**, with reasoning:
+**One finding is currently suppressed**, with reasoning:
 
 | Advisory | Package | Type | Fix | Why suppressed |
 |---|---|---|---|---|
@@ -113,7 +130,7 @@ With that one suppression in place, `npm run audit` reports no findings at the
 
 ## Runtime configuration
 
-Copy the templates and fill them in:
+Copy the templates and fill them in — run from the repository root:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -121,17 +138,28 @@ cp backend/.env.test.example backend/.env.test
 cp frontend/.env.example frontend/.env.local
 ```
 
+`backend/.env.example` ships with its three secrets **empty** and a placeholder
+`DATABASE_URL`. All four must hold real values: a blank one is refused at startup.
+Format is only enforced for `RECEIPT_SIGNING_SECRET` (≥32 bytes, distinct from the
+other two) — a short `JWT_SECRET` is accepted, and a non-blank but invalid
+`KEYSTORE_MASTER_SECRET` still fails later at election activation.
+`backend/.env.test` and `frontend/.env.local` work as copied.
+
 ### Backend
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | Use a direct/session connection for migrations |
-| `JWT_SECRET` | yes | |
+| `DATABASE_URL` | yes | Use a direct/session connection for migrations. An empty value is caught only indirectly, by SQLAlchemy |
+| `JWT_SECRET` | yes | Blank is refused at startup; **length is not checked**, so a short weak value is accepted |
 | `JWT_ALGORITHM` | no | Pinned to `HS256`; any other value is rejected at startup — see the audit note above |
-| `KEYSTORE_MASTER_SECRET` | yes | Fernet key for election private keys |
-| `RECEIPT_SIGNING_SECRET` | yes | ≥32 UTF-8 bytes, must differ from the two above |
+| `KEYSTORE_MASTER_SECRET` | yes | Fernet key for election private keys. Blank is refused at startup; **the Fernet format is not checked** — a malformed value fails later, at election activation |
+| `RECEIPT_SIGNING_SECRET` | yes | ≥32 UTF-8 bytes, must differ from the two above. Rotating it invalidates every existing ballot commitment |
 | `ENVIRONMENT` | no | One of `development`, `test`, `production` (case/whitespace-normalised). Any other value is rejected at startup; only `production` enables stricter checks |
-| `CORS_ALLOWED_ORIGINS` | in production | Comma-separated origins |
+| `CORS_ALLOWED_ORIGINS` | conditional | Comma-separated origins. Not needed for an API-only backend; **required whenever a browser frontend calls the API from another origin**, and required in production |
+
+`KEYSTORE_MASTER_SECRET` must be **retained** for as long as any existing election
+keys must remain usable — it Fernet-wraps each election's Paillier private key, so
+losing or rotating it leaves those elections permanently untallyable.
 
 `ENVIRONMENT` is a **closed set**: `development`, `test` or `production`, matched
 after trimming and lower-casing (so `" Production "` is accepted). An unknown
@@ -191,8 +219,15 @@ so a bundle carries the value present when it was built.
 # local development — falls back to http://localhost:8000 when unset
 npm run dev
 
-# production — the variable is REQUIRED and must be https
+# production — the variable is REQUIRED and must be https (bash form)
 VITE_API_BASE_URL=https://api.example.edu npm run build
+```
+
+The inline form is bash-only. In PowerShell:
+
+```powershell
+$env:VITE_API_BASE_URL = "https://api.example.edu"
+npm run build
 ```
 
 The value is validated by a single rule — `validateApiBaseUrl()` in

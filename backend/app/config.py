@@ -182,6 +182,34 @@ class Settings(BaseSettings):
 
         return self
 
+    # Defined after validate_receipt_signing_secret on purpose: mode="after"
+    # validators run in definition order and the first failure wins, so a freshly
+    # copied .env still reports the RECEIPT_SIGNING_SECRET length error first,
+    # which is what the setup documentation tells the reader to expect.
+    @model_validator(mode="after")
+    def validate_required_secrets_present(self):
+        """Reject blank secrets that the plain `str` annotations would accept.
+
+        `str` is satisfied by the empty string, and `.env.example` ships these
+        two deliberately empty — so before this check the application started
+        normally with either one blank.
+
+        That mattered most for JWT_SECRET: an empty HMAC key is trivially
+        guessable, so anyone could mint a token for any user id and role,
+        including system_admin, against a server that looked healthy.
+        KEYSTORE_MASTER_SECRET is checked here so the mistake surfaces at startup
+        rather than at election activation, where it would otherwise first appear.
+
+        Only emptiness is enforced. Length and format are not: a minimum length
+        would reject existing short-but-real deployment secrets on upgrade, and
+        that belongs in its own announced change.
+        """
+        for name in ("JWT_SECRET", "KEYSTORE_MASTER_SECRET"):
+            if not getattr(self, name).strip():
+                raise ValueError(f"{name} must not be empty")
+
+        return self
+
     @model_validator(mode="after")
     def validate_environment(self):
         """Normalise ENVIRONMENT and reject anything outside the known set.

@@ -27,6 +27,11 @@ alembic -x db_url="$SOME_DATABASE_URL" upgrade head
 | `0002_ballot_config` | Adds `elections.ballot_type` and `elections.max_selections`, plus the `ballot_type` enum type. |
 | `0003_ballot_commitment` | Renames `ballots.vote_hash` to `ballots.ballot_commitment`. Data is preserved, but values written before this revision are old salted hashes and will not verify. |
 | `0004_audit_chain` | Adds `audit_logs.sequence_number`, `previous_hash` and `entry_hash`, plus the `audit_chain_head` table. Backfills existing audit rows into a valid chain and seeds the head. |
+| `0005_user_group` | Adds the optional `users.group` column and its index, for bulk eligible-voter selection by organisation. **Current head.** |
+
+The chain is linear: `0001_baseline` → `0002_ballot_config` →
+`0003_ballot_commitment` → `0004_audit_chain` → `0005_user_group`. Confirm the head
+at any time with `alembic heads`, which should print `0005_user_group (head)`.
 
 The split exists so that both a fresh database and the already-deployed database
 can reach the same final schema.
@@ -35,38 +40,71 @@ can reach the same final schema.
 
 ### Fresh database
 
+The database itself must already exist — Alembic connects to it, it does not create
+it. See "Create the development database" in the root
+[`readme.md`](../readme.md#create-the-development-database).
+
 ```bash
 cd backend
 alembic upgrade head
 ```
 
-Runs `0001` then `0002`.
+Runs the **whole chain**, `0001_baseline` through `0005_user_group`. A fresh
+database does not stop at `0002` or `0004`.
 
 ### Existing database (the deployed Supabase project)
 
 The tables in `0001` already exist there, so `0001` must be **stamped**, not
 run — running it would fail on the existing objects.
 
+> **Stamping is a claim that the baseline schema is already present.** It writes an
+> `alembic_version` row without executing any DDL — and it *overwrites* whatever
+> revision was recorded before. Stamping a database that is already versioned
+> **rewinds** its recorded revision, and the following `upgrade head` then re-runs
+> migrations that have already been applied. `0003_ballot_commitment` is a column
+> rename with no existence guard, so a rewind through it fails outright.
+>
+> **Establish the recorded revision first.** `verify_schema` cannot do this: it
+> compares tables and columns against the models and never reads
+> `alembic_version`. Only `alembic current` tells you where Alembic thinks the
+> database is.
+
 ```bash
 cd backend
 
-# 1. Confirm what is actually deployed. Read-only; safe to run against prod.
-python -m scripts.verify_schema
+# 1. What revision does Alembic already have recorded? THIS DECIDES EVERYTHING.
+#    Empty output = unversioned. Anything else = already under Alembic control.
+alembic current
+alembic heads          # for comparison; should print 0005_user_group (head)
 
-# 2. Record the baseline as already applied (writes only to alembic_version).
-alembic stamp 0001_baseline
-
-# 3. Apply everything after the baseline.
-alembic upgrade head
-
-# 4. Confirm the result.
+# 2. Inspect the actual schema. Read-only; safe to run against prod.
 python -m scripts.verify_schema
 ```
 
-`0002` is guarded by a column-existence check, so step 3 is safe even if
-somebody had already added those columns by hand.
+**If step 1 printed a revision** — the database is already managed. Do **not**
+stamp. Back up, then upgrade from where it is:
 
-Take a Supabase backup before step 3.
+```bash
+alembic upgrade head
+python -m scripts.verify_schema
+```
+
+**If step 1 printed nothing** — the database is unversioned. Stamp the baseline
+only after step 2 has confirmed the `0001` tables genuinely exist, and only after
+taking a backup:
+
+```bash
+alembic stamp 0001_baseline    # records 0001 as applied; runs no DDL
+alembic upgrade head           # 0002 → 0003 → 0004 → 0005
+python -m scripts.verify_schema
+```
+
+`0002` and `0005` guard their column and index additions with inspector checks, so
+the upgrade tolerates objects somebody had already added by hand. `0003` and `0004`
+carry no such guard — another reason not to replay them by stamping backwards.
+
+A **fresh, empty** database needs none of this — use `alembic upgrade head` on its
+own, as in the previous section. Do not stamp an empty database.
 
 ## Adding a new migration
 
@@ -300,16 +338,31 @@ delete them.
 The migration and constraint tests need a real PostgreSQL instance and are
 skipped without one:
 
+`TEST_POSTGRES_URL` is left **commented out** in `.env.test.example`, so these files
+skip by default and `pytest tests -q` needs no PostgreSQL. Export it only for this
+run.
+
 ```bash
 docker run --rm -d -p 55432:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=evoting_test \
   --name evoting-test-pg postgres:16
 
+cd backend
 export TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/evoting_test
 export ALLOW_DESTRUCTIVE_DB_TESTS=true
-pytest tests/test_migrations_postgres.py -v
+
+pytest tests/test_migrations_postgres.py -v   # migrations and constraints only
+pytest tests -q                               # or the full suite
+
+unset ALLOW_DESTRUCTIVE_DB_TESTS TEST_POSTGRES_URL
+docker rm -f evoting-test-pg
 ```
 
 The tests fail closed unless the URL uses PostgreSQL, targets localhost, names
 the database exactly `evoting_test`, and `ALLOW_DESTRUCTIVE_DB_TESTS=true` is
 set. The fixture drops and recreates the `public` schema before every test.
+
+**This is not your development database.** It is a disposable container that is
+destroyed at the end. Never point `TEST_POSTGRES_URL` at the `evoting` development
+database, at Supabase, or at any database whose contents matter — and never work
+around the guard by renaming a real database to `evoting_test`.

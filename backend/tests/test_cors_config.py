@@ -298,6 +298,62 @@ def test_receipt_signing_secret_separation_still_enforced(other):
 
 
 # ---------------------------------------------------------------------------
+# Required secrets must not be blank
+#
+# `str` is satisfied by "", and .env.example ships JWT_SECRET and
+# KEYSTORE_MASTER_SECRET deliberately empty. Before this validation the app
+# started normally with either one blank — signing every access token with an
+# empty HMAC key, which anyone can guess and therefore forge tokens against.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["JWT_SECRET", "KEYSTORE_MASTER_SECRET"])
+@pytest.mark.parametrize("blank", ["", " ", "   ", "\t", "\n"])
+def test_required_secret_rejects_blank_values(name, blank):
+    """Empty and whitespace-only are both blank; neither may start the app."""
+    with pytest.raises(ValidationError, match=f"{name} must not be empty"):
+        _settings(**{name: blank})
+
+
+@pytest.mark.parametrize("name", ["JWT_SECRET", "KEYSTORE_MASTER_SECRET"])
+def test_required_secret_accepts_a_non_blank_value(name):
+    assert getattr(_settings(**{name: "x" * 32}), name) == "x" * 32
+
+
+@pytest.mark.parametrize("name", ["JWT_SECRET", "KEYSTORE_MASTER_SECRET"])
+def test_required_secret_is_not_stripped(name):
+    """Only presence is validated. Trimming the stored value would change every
+    signature derived from it, silently invalidating tokens or election keys."""
+    padded = "  " + "x" * 32 + "  "
+    assert getattr(_settings(**{name: padded}), name) == padded
+
+
+def test_short_secrets_are_still_accepted():
+    """Deliberately NOT a length check.
+
+    A minimum length would reject existing short-but-real deployment secrets on
+    upgrade — including CI's own `JWT_SECRET: test` — so it belongs in its own
+    announced change. This pins the current, narrower contract so a length rule
+    cannot be added without updating this test.
+    """
+    settings = _settings(JWT_SECRET="test", KEYSTORE_MASTER_SECRET="k")
+
+    assert settings.JWT_SECRET == "test"
+    assert settings.KEYSTORE_MASTER_SECRET == "k"
+
+
+def test_receipt_secret_length_is_reported_before_a_blank_jwt_secret():
+    """Validator order is load-bearing for the setup documentation.
+
+    A freshly copied .env.example leaves all three secrets empty. The docs tell
+    the reader the first error is the RECEIPT_SIGNING_SECRET length one, so the
+    blank check must stay defined after it.
+    """
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        _settings(JWT_SECRET="", KEYSTORE_MASTER_SECRET="", RECEIPT_SIGNING_SECRET="")
+
+
+# ---------------------------------------------------------------------------
 # JWT algorithm is pinned to HS256
 #
 # CI suppresses the ecdsa advisory (PYSEC-2026-1325) on the grounds that this API
