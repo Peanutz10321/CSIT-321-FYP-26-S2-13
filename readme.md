@@ -793,7 +793,7 @@ npm run build
 cd backend
 pip-audit -r requirements.txt --strict --ignore-vuln PYSEC-2026-1325
 
-# frontend — better-npm-audit at --level high, one advisory suppressed via .nsprc
+# frontend — better-npm-audit at --level high, no advisories currently suppressed
 cd frontend
 npm run audit
 ```

@@ -112,8 +112,9 @@ jobs:
       # `npm audit fix` can silently change resolved versions, so any finding is
       # triaged and fixed deliberately in its own change. Runs through
       # better-npm-audit so a single advisory can be suppressed with a written
-      # justification in .nsprc (see the react-router entry there) instead of
-      # lowering the level or ignoring the whole report.
+      # justification in frontend/.nsprc instead of lowering the level or
+      # ignoring the whole report. No advisory is suppressed at present, so that
+      # file does not exist; see backend/DEPENDENCIES.md before adding one.
       - name: Audit frontend dependencies
         run: npm run audit
 

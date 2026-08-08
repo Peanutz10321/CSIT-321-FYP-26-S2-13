@@ -105,28 +105,26 @@ The CI gate runs `better-npm-audit audit --level high` (via the `audit` npm
 script) rather than `npm audit --audit-level=high` directly. This is identical in
 effect except that a single advisory can be suppressed with a written
 justification in `frontend/.nsprc`, instead of lowering the severity threshold or
-ignoring the whole report. Plain `npm audit` stays unfiltered, so the suppression
-is visible and scoped to exactly one advisory ID.
+ignoring the whole report. Plain `npm audit` stays unfiltered, so any suppression
+stays visible and scoped to exactly one advisory ID.
 
-**One finding is currently suppressed**, with reasoning:
+**No frontend advisory is currently suppressed**, and there is no `.nsprc` file.
 
-| Advisory | Package | Fix | Why suppressed |
-|---|---|---|---|
-| `GHSA-qwww-vcr4-c8h2` | `react-router` (via `react-router-dom` 7.18.1) | None applicable | RSC-Mode CSRF bypass. This frontend is a Vite single-page app and does **not** use React Server Components, so the vulnerable RSC action path is unreachable. |
+`GHSA-qwww-vcr4-c8h2` (react-router RSC-Mode CSRF bypass) was suppressed until
+`react-router-dom` **7.18.2** shipped the fix; the pin was moved to `7.18.2` and
+the `.nsprc` entry deleted. If a future advisory needs suppressing, recreate
+`frontend/.nsprc` with the advisory ID, an `expiry` date, and a `notes` field
+explaining why the vulnerable path is unreachable, and add a row here.
 
-`react-router-dom` is pinned to **7.18.1 exactly**. No `react-router-dom` 7.x
-release is free of a high advisory: `<= 7.17.0` carries a larger cluster —
-including an unauthenticated RCE and open-redirect/XSS reachable from
-`<Link>`/`useNavigate` in an ordinary SPA — while `7.12.0 – 8.2.0` carries only
-the RSC-Mode advisory above, which does not apply here. `7.18.1` is therefore the
-safest available pin: it escapes the entire earlier cluster and leaves a single
-advisory that is unreachable by this app's architecture. The suppression expires
-on **2026-08-31** and must then be re-reviewed. Remove it when a supported fixed
-7.x release ships, or replace it as part of a planned, tested migration to v8.
+`react-router-dom` is pinned to **7.18.2 exactly** rather than a caret range, so
+a routing upgrade is always a deliberate, reviewed change. Releases `<= 7.17.0`
+carry a large high-severity cluster — including an unauthenticated RCE and
+open-redirect/XSS reachable from `<Link>`/`useNavigate` in an ordinary SPA — so
+do not downgrade below `7.18.2`.
 
-With that one suppression in place, `npm run audit` reports no findings at the
-`high` level; the backend `pip-audit` is likewise clean apart from the documented
-`ecdsa` suppression above.
+`npm run audit` currently reports no findings at the `high` level with no
+suppressions in play; the backend `pip-audit` is likewise clean apart from the
+documented `ecdsa` suppression above.
 
 ## Runtime configuration
 
