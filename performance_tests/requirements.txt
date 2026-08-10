@@ -1,0 +1,14 @@
+# Performance-testing dependencies. Deliberately NOT part of the backend's
+# requirements.txt: this tooling must never be installed into the deployed
+# application environment.
+#
+# Install into the backend virtualenv (or a separate one):
+#
+#     python -m pip install -r performance_tests/requirements.txt
+#
+# Direct HTTP client used by setup, verification and preflight checks.
+httpx==0.28.1
+
+# Load-test driver. Pulls in gevent, requests, flask and pyzmq.
+# Pinned to the version used to produce the documented performance results.
+locust==2.46.3

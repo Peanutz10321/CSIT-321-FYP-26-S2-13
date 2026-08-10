@@ -903,3 +903,4 @@ A health check is available at `GET /health/db`.
 |---|---|
 | [`backend/MIGRATIONS.md`](backend/MIGRATIONS.md) | Alembic workflow, revision history, Supabase stamp/upgrade procedure, schema verification, guarded demo seeding, ballot commitments, audit chain, and audit-table role provisioning. |
 | [`backend/DEPENDENCIES.md`](backend/DEPENDENCIES.md) | Dependency file roles, regenerating pins, auditing, and the reasoning behind the one suppressed advisory. |
+| [`performance_tests/README.md`](performance_tests/README.md) | Guarded performance-data setup, readiness verification, and Locust read and synchronized-voting scenarios. |

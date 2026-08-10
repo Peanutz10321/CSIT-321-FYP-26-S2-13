@@ -45,3 +45,17 @@ Thumbs.db
 # Local planning notes, not part of the project source
 reminders/
 problems/
+
+# ── Performance-test artefacts ────────────────────
+# A generated manifest names real staging accounts, external ids and election
+# ids; the local env file holds real staging credentials. Neither is committed.
+# See performance_tests/README.md.
+# Everything generated, whatever it is named. The atomic writer also produces a
+# transient <manifest>.json.tmp, which an extension-based rule would have missed.
+performance_tests/data/*
+!performance_tests/data/.gitkeep
+performance_tests/results/*
+!performance_tests/results/.gitkeep
+performance_tests/.env*
+# Committed template. Variable NAMES and placeholder values only.
+!performance_tests/.env.example
