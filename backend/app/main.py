@@ -36,7 +36,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Homomorphic E-Voting API", lifespan=lifespan)
+app = FastAPI(
+    title="Homomorphic E-Voting API",
+    lifespan=lifespan,
+    openapi_url=None if settings.is_production else "/openapi.json",
+)
 
 # Origins come from CORS_ALLOWED_ORIGINS and are validated at startup: a wildcard
 # is refused when ENVIRONMENT=production, and an unset value means no cross-origin
